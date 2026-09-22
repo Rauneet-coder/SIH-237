@@ -1,6 +1,6 @@
 # API Reference — SIH26237
 
-> Complete REST API documentation. The FastAPI backend auto-generates interactive Swagger docs at `http://localhost:8000/docs`.
+> Complete REST API documentation for the Node.js Express microservice. Health check: `http://localhost:8000/health`.
 
 ---
 
