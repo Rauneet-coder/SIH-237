@@ -143,15 +143,11 @@ function traceTraitors({ suspectWatermark, candidates, biases }) {
     };
   });
 
-  // Calculate statistics (mean & standard deviation)
-  const scores = results.map((r) => r.score);
-  const mean = scores.reduce((sum, val) => sum + val, 0) / scores.length;
-  const variance = scores.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / (scores.length || 1);
-  const stdDev = Math.sqrt(variance);
-
-  // Dynamic threshold: Accusation threshold Z based on code length and coalition assumptions
-  // Baseline threshold for 256-bit Tardos codes
-  const threshold = Math.max(15.0, mean + 1.25 * stdDev);
+  // Theoretical threshold:
+  // Under the Tardos model, an innocent non-colluder's expected score is 0 with standard deviation sqrt(m).
+  // A threshold Z = 1.25 * sqrt(m) ensures bounded false positives while detecting colluders.
+  const m = biases ? biases.length : DEFAULT_CODE_LENGTH;
+  const threshold = Math.max(15.0, 1.25 * Math.sqrt(m));
 
   // Identify accused colluders whose scores exceed the threshold
   const accused = results
