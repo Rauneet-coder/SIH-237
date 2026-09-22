@@ -16,7 +16,7 @@ if (!serverPrivateKey || !serverPublicKey) {
 const env = {
   PORT: process.env.PORT || 8000,
   NODE_ENV: process.env.NODE_ENV || 'development',
-  MONGODB_URI: process.env.MONGODB_URI || process.env.MONGODB_URL || 'mongodb://sih:sih_secret@localhost:27017/sih237?authSource=admin',
+  MONGODB_URI: process.env.MONGODB_URI || process.env.MONGODB_URL || 'mongodb://127.0.0.1:27017/sih237',
   JWT_SECRET: process.env.JWT_SECRET || 'dev_secret_sih26237_change_in_production_key_32chars',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '24h',
   SERVER_PRIVATE_KEY: serverPrivateKey,
