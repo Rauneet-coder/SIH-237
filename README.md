@@ -9,27 +9,27 @@
 
 When a classified document is distributed to multiple authorized recipients, anyone could leak it — and traditional systems cannot prove **who** did it. This system solves that by:
 
-1. **Encrypting documents** with post-quantum cryptography (Kyber-1024)
-2. **Injecting an invisible forensic watermark** unique to each recipient at decryption time
-3. **Logging every decryption event immutably** on a private Hyperledger Fabric blockchain
-4. **Enabling cryptographic attribution** — if a document leaks, the system can extract the watermark and prove cryptographically who decrypted it
+1. **Multi-Recipient Hybrid Encryption:** Document encrypted with AES-256-GCM; symmetric key encrypted individually for each recipient using their RSA public key.
+2. **Attribution & Decryption Logging:** Every decryption attempt (success or failure) is logged with recipient ID, document hash, and timestamp.
+3. **Tamper-Evident Signed Provenance Hash-Chain:** Immutable audit ledger where every block cryptographically chains the previous block's SHA-256 hash and is signed with the server's private authority key.
+4. **Cryptographic Chain Verification:** An independent verification service that walks the entire chain, recomputes hashes, verifies digital signatures, and detects any alteration or deletion.
 
 ---
 
 ## 🏗️ Architecture Overview
 
 ```
-Sender → Encrypts Doc (AES-256-GCM + Kyber KEM) → IPFS Storage
+Sender → Encrypts Doc (AES-256-GCM + RSA-OAEP per recipient) → Secure Storage (MongoDB/IPFS)
                                                          ↓
-                            Recipient requests decryption
+                            Recipient requests decryption with private key
                                                          ↓
-                    System injects unique invisible watermark
+                         System logs DECRYPT_ATTEMPT in provenance chain
                                                          ↓
-              Decryption event logged on Hyperledger Fabric
-               (signed by recipient's Dilithium-3 PQ key)
+                   Key unwrapped & decrypted → Hash verified (SHA-256)
                                                          ↓
-              If leaked → extract watermark → query blockchain
-                        → cryptographic attribution proof
+                 DECRYPT_SUCCESS / DECRYPT_FAILURE logged in signed hash-chain
+                                                         ↓
+             Independent auditors call /api/provenance/verify to prove chain integrity
 ```
 
 ---
@@ -38,33 +38,28 @@ Sender → Encrypts Doc (AES-256-GCM + Kyber KEM) → IPFS Storage
 
 ```
 SIH_237/
-├── backend/               # Python FastAPI microservice
-│   ├── app/
-│   │   ├── api/           # Route handlers
-│   │   ├── core/          # Config, DB, crypto utilities
-│   │   ├── models/        # SQLAlchemy ORM models
-│   │   └── services/      # Business logic
-│   └── tests/             # Pytest unit + integration tests
-├── blockchain/            # Hyperledger Fabric
-│   ├── chaincode/         # Go chaincode (smart contracts)
-│   ├── network/           # Fabric network config
-│   └── scripts/           # Deploy/invoke scripts
-├── frontend/              # Next.js 14 App Router (TypeScript)
-│   ├── app/               # Pages and layouts
-│   ├── components/        # Reusable UI components
-│   └── lib/               # Client-side PQC utils (liboqs-js)
-├── docs/                  # Full knowledge base (read these first!)
-│   ├── ARCHITECTURE.md    # System design deep-dive
-│   ├── CRYPTOGRAPHY.md    # PQC algorithms explained
-│   ├── BLOCKCHAIN.md      # Hyperledger Fabric guide
-│   ├── WATERMARKING.md    # Forensic watermarking explained
-│   ├── API.md             # All API endpoints
-│   ├── SECURITY.md        # Threat model & security design
-│   └── DEVELOPMENT.md     # Dev setup & workflow
-├── AGENTS.md              # AI agent rules (auto-loaded)
-├── requirement.md         # Full SRS document
-├── docker-compose.yml     # Full stack orchestration
-└── .env.example           # Environment variable template
+├── backend/                   # Node.js + Express microservice
+│   ├── src/
+│   │   ├── config/            # DB (Mongoose) & Environment config
+│   │   ├── controllers/       # Auth, Document & Provenance controllers
+│   │   ├── middleware/        # JWT auth & error handling
+│   │   ├── models/            # User, Document, ProvenanceLog Mongoose models
+│   │   ├── routes/            # REST API route declarations
+│   │   ├── services/          # cryptoService, provenanceService, documentService
+│   │   └── server.js          # Express app entrypoint
+│   ├── tests/                 # Unit & integration tests (node:test)
+│   ├── package.json           # Dependencies & test scripts
+│   ├── Dockerfile             # Production Node.js container
+│   └── README.md              # Backend detailed documentation
+├── frontend/                  # Next.js 14 App Router (TypeScript)
+│   ├── app/                   # Pages and layouts
+│   ├── components/            # Reusable UI components
+│   └── Dockerfile             # Frontend container
+├── docs/                      # Technical guides & specifications
+├── AGENTS.md                  # Development & AI rules
+├── requirement.md             # Formal SRS document
+├── docker-compose.yml         # Full stack orchestration
+└── .env.example               # Environment variable template
 ```
 
 ---
@@ -72,53 +67,44 @@ SIH_237/
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Docker 26+ and Docker Compose v2
-- Node.js 20+ (for frontend dev)
-- Python 3.11+ (for backend dev)
-- Go 1.21+ (for chaincode dev)
+- Docker 26+ and Docker Compose v2 (for containerized setup)
+- Node.js 20+ (for backend and frontend development)
+- MongoDB 6+ or 7+ (local or containerized)
 
-### Run the Full Stack
+### Local Development Setup
+
+#### 1. Backend Setup
 ```bash
-# 1. Clone the repo
+cd backend
+cp .env.example .env
+npm install
+npm run dev
+# Server running at http://localhost:8000
+```
+
+#### 2. Run Backend Tests
+```bash
+cd backend
+npm test
+# Runs 23/23 unit and integration tests (crypto, provenance hash-chain, REST API)
+```
+
+### Full Stack via Docker Compose
+```bash
+# 1. Clone repository
 git clone <repo-url> && cd SIH_237
 
-# 2. Set up environment
+# 2. Configure environment
 cp .env.example .env
-# Edit .env with your values
 
-# 3. Start all services
-docker-compose up --build
+# 3. Start services
+docker compose up --build
 
 # 4. Access services
-# Frontend:        http://localhost:3000
-# API + Swagger:   http://localhost:8000/docs
-# IPFS Dashboard:  http://localhost:5001/webui
+# Frontend:            http://localhost:3000
+# Backend API:         http://localhost:8000/health
+# Chain Verification:  http://localhost:8000/api/provenance/verify
 ```
-
-### Run Tests
-```bash
-# Backend unit tests
-cd backend && pip install -r requirements.txt
-pytest tests/ -v
-
-# Go chaincode tests
-cd blockchain/chaincode/provenance && go test ./...
-```
-
----
-
-## 📚 Documentation Index
-
-| Document | What It Teaches |
-|---|---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full system design, data flow, service interactions |
-| [CRYPTOGRAPHY.md](docs/CRYPTOGRAPHY.md) | PQC algorithms, Kyber, Dilithium, AES-GCM from scratch |
-| [BLOCKCHAIN.md](docs/BLOCKCHAIN.md) | Hyperledger Fabric, chaincode, CouchDB queries |
-| [WATERMARKING.md](docs/WATERMARKING.md) | Invisible watermark embedding and extraction |
-| [API.md](docs/API.md) | All REST endpoints with request/response schemas |
-| [SECURITY.md](docs/SECURITY.md) | Threat model, attack surfaces, mitigations |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Local dev setup, coding standards, CI/CD |
-| [requirement.md](requirement.md) | Formal SRS (functional + non-functional requirements) |
 
 ---
 
@@ -126,28 +112,30 @@ cd blockchain/chaincode/provenance && go test ./...
 
 | Technology | Version | Role |
 |---|---|---|
-| FastAPI (Python) | 0.111 | REST API backend |
-| liboqs-python | 0.10.1 | Post-quantum cryptography |
-| PyMuPDF | 1.24.5 | PDF watermark injection |
-| Hyperledger Fabric | 2.5.x | Private blockchain |
-| IPFS (Kubo) | 0.28 | Encrypted document storage |
-| Next.js | 14.x | Frontend dashboard |
-| PostgreSQL | 16 | Application metadata DB |
-| CouchDB | 3.3 | Fabric state database |
-| Docker Compose | v2 | Full stack orchestration |
+| Node.js & Express | 20+ / 4.x | REST API backend service |
+| node:crypto | Built-in | AES-256-GCM, RSA-OAEP, SHA-256, RSA signatures |
+| MongoDB & Mongoose | 7.x / 8.x | Documents, users, and provenance audit storage |
+| Next.js | 14.x | Frontend dashboard & client interface |
+| Docker & Docker Compose | v2 | Container orchestration |
 
 ---
 
-## 👥 Team
+## 📡 Core API Summary
 
-> SIH26237 — Ministry of Defence, Government of India
+- `GET /health` — Service health status
+- `POST /api/auth/register` — User registration with RSA keypair generation
+- `POST /api/auth/login` — User authentication with JWT issuance
+- `GET /api/auth/recipients` — List available recipient public keys
+- `POST /api/documents/upload` — Multi-recipient hybrid document encryption & upload
+- `GET /api/documents` — List accessible encrypted documents
+- `POST /api/documents/:id/decrypt` — Decrypt document with recipient private key (with provenance logging)
+- `GET /api/provenance/logs` — Query sequential audit logs
+- `GET /api/provenance/verify` — Cryptographic hash-chain & signature verification
+- `GET /api/provenance/server-key` — Export server's public key for external verification
 
 ---
 
-## ⚠️ Important Notes for Developers & AI Agents
+## 👥 Team & Project Info
 
-- **Read `AGENTS.md` first** — it contains non-negotiable coding rules
-- **Never use RSA or ECDSA** — this is a post-quantum system
-- **Never store private keys server-side** — architectural non-starter
-- **Never use public blockchains** — Hyperledger Fabric only
-- **Read `docs/CRYPTOGRAPHY.md`** before touching any crypto code
+> **SIH26237** — Ministry of Defence, Government of India  
+> Smart India Hackathon 2026
