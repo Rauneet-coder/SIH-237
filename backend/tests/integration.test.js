@@ -184,7 +184,12 @@ describe('End-to-End API Integration Tests', () => {
     assert.ok(data.decryptedData);
 
     const decryptedText = Buffer.from(data.decryptedData, 'base64').toString('utf-8');
-    assert.equal(decryptedText, sampleDocumentText);
+    assert.ok(decryptedText.includes(sampleDocumentText));
+
+    const { extractForensicFingerprint } = require('../src/services/collusionService');
+    const fingerprint = extractForensicFingerprint(decryptedText);
+    assert.ok(fingerprint);
+    assert.equal(fingerprint.rec, recipient1User.id);
   });
 
   test('POST /api/documents/:id/decrypt should reject unauthorized Recipient 2 with 403 and log failure', async () => {
@@ -244,5 +249,87 @@ describe('End-to-End API Integration Tests', () => {
       assert.ok(data.logs[i].signature);
       assert.ok(data.logs[i].entryHash);
     }
+  });
+
+  test('POST /api/documents/:id/trace should trace leaked document back to Recipient 1', async () => {
+    // 1. Recipient 1 decrypts and gets watermarked document
+    const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'officer_bravo',
+        password: 'PasswordBravo123!'
+      })
+    });
+    const { token: r1Token } = await loginRes.json();
+
+    const decryptRes = await fetch(`${baseUrl}/api/documents/${uploadedDocId}/decrypt`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${r1Token}`
+      },
+      body: JSON.stringify({ privateKey: recipient1PrivateKey })
+    });
+    const { decryptedData } = await decryptRes.json();
+
+    // 2. Investigator traces the leaked document
+    const traceRes = await fetch(`${baseUrl}/api/documents/${uploadedDocId}/trace`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${senderToken}`
+      },
+      body: JSON.stringify({
+        leakedContent: decryptedData,
+        isBase64: true
+      })
+    });
+
+    assert.equal(traceRes.status, 200);
+    const traceResult = await traceRes.json();
+    assert.equal(traceResult.report.collusionDetected, true);
+    assert.ok(traceResult.report.accusedRecipients.length > 0);
+    assert.equal(traceResult.report.accusedRecipients[0].recipientId, recipient1User.id);
+    assert.ok(traceResult.serverSignature);
+    assert.ok(traceResult.serverPublicKey);
+  });
+
+  test('POST /api/documents/:id/simulate-collusion should unmask colluding coalition', async () => {
+    // 1. Upload a document distributed to both Recipient 1 and Recipient 2
+    const docRes = await fetch(`${baseUrl}/api/documents/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${senderToken}`
+      },
+      body: JSON.stringify({
+        title: 'Joint Intelligence Document',
+        fileName: 'joint_intel.pdf',
+        fileContent: Buffer.from('CLASSIFIED JOINT BRIEFING').toString('base64'),
+        isBase64: true,
+        recipientIds: [recipient1User.id, recipient2User.id]
+      })
+    });
+    const { document: jointDoc } = await docRes.json();
+
+    // 2. Simulate collusion attack where both recipients combine their watermarks
+    const simRes = await fetch(`${baseUrl}/api/documents/${jointDoc.id}/simulate-collusion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${senderToken}`
+      },
+      body: JSON.stringify({
+        colluderIds: [recipient1User.id, recipient2User.id],
+        strategy: 'interleaving'
+      })
+    });
+
+    assert.equal(simRes.status, 200);
+    const simData = await simRes.json();
+    assert.ok(simData.simulation.hybridWatermarkLength > 0);
+    assert.equal(simData.tracingResult.collusionDetected, true);
+    assert.ok(simData.tracingResult.accusedRecipients.length >= 1);
   });
 });

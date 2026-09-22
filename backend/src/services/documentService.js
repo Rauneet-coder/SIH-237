@@ -2,6 +2,7 @@ const Document = require('../models/Document');
 const User = require('../models/User');
 const cryptoService = require('./cryptoService');
 const provenanceService = require('./provenanceService');
+const collusionService = require('./collusionService');
 
 /**
  * Upload and encrypt a document for multi-recipient distribution
@@ -186,21 +187,39 @@ async function decryptDocumentForRecipient({ docId, recipientId, recipientPrivat
     throw error;
   }
 
+  // Generate collusion-resistant fingerprint codeword for this recipient
+  const biases = collusionService.generateBiasVector(document._id.toString());
+  const codeword = collusionService.generateRecipientCodeword(
+    document._id.toString(),
+    recipientId.toString(),
+    biases
+  );
+
   // Decryption success attribution log
-  await provenanceService.logProvenanceEvent({
+  const logEntry = await provenanceService.logProvenanceEvent({
     docId,
     recipientId,
     action: 'DECRYPT_SUCCESS',
     status: 'SUCCESS',
     details: {
       fileHash: document.fileHash,
-      fileSize: decryptedBuffer.length
+      fileSize: decryptedBuffer.length,
+      fingerprintCodewordHash: cryptoService.computeHash(codeword),
+      algorithm: 'TARDOS-256-COLLUSION-RESISTANT'
     }
+  });
+
+  // Embed forensic collusion-secure fingerprint into the delivered document
+  const fingerprintedBuffer = collusionService.embedForensicFingerprint(decryptedBuffer, {
+    codeword,
+    recipientId,
+    sequenceNumber: logEntry.sequenceNumber
   });
 
   return {
     document,
-    decryptedBuffer
+    decryptedBuffer: fingerprintedBuffer,
+    fingerprintCodeword: codeword
   };
 }
 
