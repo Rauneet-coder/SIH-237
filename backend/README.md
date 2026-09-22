@@ -15,6 +15,8 @@
   - **RSA-OAEP (SHA-256):** Per-recipient symmetric key wrapping
   - **SHA-256:** Document integrity hashing & canonical block hashing
   - **RSA Digital Signatures (SHA-256):** Server authority provenance block signing
+  - **Tardos Collusion-Secure Codes:** Traitor tracing algorithm resilient against coalitions of colluders
+  - **HKDF (RFC 5869):** Ephemeral session key derivation bound to document and sequence number
 
 ---
 
@@ -103,11 +105,13 @@ npm test
 - `GET /api/auth/me` — Current user profile
 - `GET /api/auth/recipients` — List available recipient public keys for encryption distribution
 
-### Document Distribution (`/api/documents`)
+### Document Distribution & Traitor Tracing (`/api/documents`)
 - `POST /api/documents/upload` — Encrypt document with AES-256-GCM & wrap keys for designated recipients
 - `GET /api/documents` — List accessible documents for the current user
 - `GET /api/documents/:id` — Get document metadata and recipient's wrapped symmetric key
-- `POST /api/documents/:id/decrypt` — Decrypt document with recipient's RSA private key (logs attribution)
+- `POST /api/documents/:id/decrypt` — Decrypt document with recipient's RSA private key (embeds Tardos collusion-secure fingerprint & logs attribution)
+- `POST /api/documents/:id/trace` — Upload/provide a leaked or hybrid document and identify colluders with statistical confidence
+- `POST /api/documents/:id/simulate-collusion` — Simulate coalition collusion attack (interleaving/majority) and verify traitor tracing accuracy
 
 ### Provenance Audit Chain (`/api/provenance`)
 - `GET /api/provenance/logs` — Query sequential provenance logs
