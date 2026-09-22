@@ -34,13 +34,14 @@ export function Header({ chainHeight = 0, isChainValid = true }: HeaderProps) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: '34px',
-            height: '34px',
-            background: '#ffffff',
-            color: '#000000',
+            width: '36px',
+            height: '36px',
+            background: '#18181b',
+            border: '1px solid #3f3f46',
+            color: '#ffffff',
             borderRadius: 'var(--radius-xs)'
           }}>
-            <Shield size={18} strokeWidth={2.5} />
+            <Shield size={18} fill="#ffffff" color="#ffffff" strokeWidth={1} />
           </div>
 
           <div>

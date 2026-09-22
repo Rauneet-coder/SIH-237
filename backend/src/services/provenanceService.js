@@ -146,9 +146,22 @@ async function verifyChain() {
     }
   }
 
+  const genesisValid = logs.length === 0 || logs[0].prevHash === GENESIS_PREV_HASH;
+  const tamperedSequences = issues.map((iss) => {
+    const match = iss.match(/#(\d+)/);
+    return match ? parseInt(match[1], 10) : 1;
+  });
+
   return {
     isValid: issues.length === 0,
+    valid: issues.length === 0,
+    tampered: issues.length > 0,
     totalEntries: logs.length,
+    totalBlocks: logs.length,
+    genesisValid,
+    chainIntegrityValid: issues.length === 0,
+    allSignaturesValid: issues.length === 0,
+    tamperedSequences,
     verifiedAt: new Date().toISOString(),
     issues
   };
