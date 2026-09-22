@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AuthProvider, useAuth, DEMO_PROFILES } from '../lib/authContext';
+import { AuthProvider, useAuth, COMMAND_OFFICERS } from '../lib/authContext';
 import { Header } from '../components/Header';
 import { ConsoleNav, ConsoleTab } from '../components/ConsoleNav';
 import { OverviewConsole } from '../components/consoles/OverviewConsole';
@@ -11,7 +11,7 @@ import { ForensicsConsole } from '../components/consoles/ForensicsConsole';
 import { LedgerConsole } from '../components/consoles/LedgerConsole';
 import { KeyVaultConsole } from '../components/consoles/KeyVaultConsole';
 import { api } from '../lib/api';
-import { Shield, Lock, Key, ArrowRight, UserPlus, LogIn, AlertCircle } from 'lucide-react';
+import { Shield, Lock, Key, ArrowRight, UserPlus, LogIn, AlertCircle, Download, Check } from 'lucide-react';
 
 function DashboardContent() {
   const { user, token, login, register, quickSwitchUser, isLoading } = useAuth();
@@ -27,6 +27,8 @@ function DashboardContent() {
   const [role, setRole] = useState('recipient');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [newOfficerKey, setNewOfficerKey] = useState<{ username: string; privateKey: string } | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
 
   // Poll provenance height & validity
   const refreshLedgerStatus = async () => {
@@ -53,7 +55,8 @@ function DashboardContent() {
       if (authMode === 'login') {
         await login(username, password);
       } else {
-        await register(username, email, password, role);
+        const privKey = await register(username, email, password, role);
+        setNewOfficerKey({ username, privateKey: privKey });
         await login(username, password);
       }
     } catch (err: any) {
@@ -69,24 +72,94 @@ function DashboardContent() {
       {/* Tactical Telemetry Header */}
       <Header chainHeight={chainHeight} isChainValid={isChainValid} />
 
+      {/* New Officer Key Generated Dialog */}
+      {newOfficerKey && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div className="card" style={{ maxWidth: '580px', width: '100%', border: '1px solid #34d399', boxShadow: '0 12px 32px rgba(0,0,0,0.9)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+              <Key size={20} color="#34d399" />
+              <span className="font-bold text-sm text-primary uppercase-track">
+                OFFICER CRYPTOGRAPHIC KEYPAIR GENERATED
+              </span>
+            </div>
+
+            <p className="text-secondary text-xs" style={{ marginBottom: '14px', lineHeight: 1.6 }}>
+              A fresh 2048-bit RSA keypair has been generated for officer <strong className="text-primary">{newOfficerKey.username}</strong>. The public key is stored on the ledger node. The private key below is loaded into your terminal session memory.
+            </p>
+
+            <div className="hex-box font-mono" style={{ fontSize: '10px', maxHeight: '140px', marginBottom: '16px' }}>
+              {newOfficerKey.privateKey}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(newOfficerKey.privateKey);
+                  setCopiedKey(true);
+                  setTimeout(() => setCopiedKey(false), 2000);
+                }}
+                className="btn btn-secondary btn-sm"
+              >
+                {copiedKey ? <Check size={12} color="#34d399" /> : <Key size={12} />}
+                <span>{copiedKey ? 'COPIED TO CLIPBOARD' : 'COPY PRIVATE KEY'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const blob = new Blob([newOfficerKey.privateKey], { type: 'application/x-pem-file' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${newOfficerKey.username}_private_key.pem`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                }}
+                className="btn btn-primary btn-sm"
+              >
+                <Download size={12} />
+                <span>DOWNLOAD .PEM KEY FILE</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewOfficerKey(null)}
+                className="btn btn-secondary btn-sm"
+              >
+                <span>CONTINUE TO WORKSPACE</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Auth Gate: If not authenticated, show Tactical Operational Terminal Gate */}
       {!user ? (
         <main className="container-full" style={{ padding: '40px 24px', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: '100%', maxWidth: '880px', display: 'grid', gridTemplateColumns: 'minmax(320px, 1.1fr) minmax(300px, 1fr)', gap: '32px' }}>
             
-            {/* Left: Quick Access Demo Profiles */}
+            {/* Left: Pre-Provisioned Command Terminals */}
             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
                 <Shield size={18} className="text-secondary" />
-                <span className="uppercase-track text-primary font-bold">1-Click Tactical Profiles (Instant Evaluation)</span>
+                <span className="uppercase-track text-primary font-bold">Active Command Terminals</span>
               </div>
 
               <p className="text-secondary text-xs">
-                Select a pre-configured defence terminal role to instantly access and evaluate the cryptographic pipeline:
+                Select an operational military account to connect and operate the cryptographic pipeline:
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {DEMO_PROFILES.map((p) => (
+                {COMMAND_OFFICERS.map((p) => (
                   <button
                     type="button"
                     key={p.username}

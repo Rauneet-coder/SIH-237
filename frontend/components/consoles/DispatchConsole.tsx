@@ -61,9 +61,9 @@ export function DispatchConsole({ onSuccess }: DispatchConsoleProps) {
         // Exclude current user from recipient list
         const others = res.recipients.filter((r) => r.username !== user?.username);
         setRecipients(others);
-        // Pre-select first two recipients for demo convenience
-        if (others.length >= 2) {
-          setSelectedRecipientIds([others[0].id || others[0]._id!, others[1].id || others[1]._id!]);
+        // Default select first available officer
+        if (others.length > 0 && selectedRecipientIds.length === 0) {
+          setSelectedRecipientIds([others[0].id || others[0]._id!]);
         }
       } catch (err: any) {
         console.error('Failed to load recipients:', err);
@@ -137,6 +137,7 @@ export function DispatchConsole({ onSuccess }: DispatchConsoleProps) {
       formData.append('file', fileToSend);
       formData.append('title', title || fileToSend.name);
       formData.append('recipients', JSON.stringify(selectedRecipientIds));
+      formData.append('recipientIds', JSON.stringify(selectedRecipientIds));
 
       const res = await api.uploadDocument(formData, token);
       setUploadedDoc(res.document);
@@ -170,7 +171,7 @@ export function DispatchConsole({ onSuccess }: DispatchConsoleProps) {
               <span>RBAC NOTICE: Currently Logged In as [{user?.role?.toUpperCase()}]</span>
             </div>
             <div className="text-muted text-xs" style={{ fontSize: '10px', marginTop: '2px' }}>
-              In operational deployments, only SENDER or ADMIN roles create and dispatch documents. Switch to Col. Sharma in the top bar to evaluate with full Sender authority.
+              Only SENDER or ADMIN credentials may initiate encrypted dispatches. Switch to an authorized dispatch officer (e.g. Col. Sharma) in the top bar to execute dispatches.
             </div>
           </div>
         )}

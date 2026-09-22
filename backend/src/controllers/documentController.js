@@ -6,8 +6,8 @@ const documentService = require('../services/documentService');
  */
 async function uploadDocument(req, res, next) {
   try {
-    const { title } = req.body;
-    let recipientIds = req.body.recipientIds;
+    const title = req.body.title;
+    let recipientIds = req.body.recipientIds || req.body.recipients;
 
     if (typeof recipientIds === 'string') {
       try {

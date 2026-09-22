@@ -509,7 +509,7 @@ export function ForensicsConsole() {
               </div>
             ) : (
               <div className="text-muted text-xs" style={{ padding: '60px 0', textAlign: 'center' }}>
-                Select 2 or more recipients and click Simulate to demonstrate how the coalition is unmasked.
+                Select 2 or more recipients and execute adversarial collusion attack analysis to unmask colluders.
               </div>
             )}
           </div>
