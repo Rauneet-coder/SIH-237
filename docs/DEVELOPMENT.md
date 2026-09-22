@@ -77,117 +77,94 @@ open http://localhost:8000/docs
 open http://localhost:5001/webui
 ```
 
----
-
-## 3. Backend Development (Python / FastAPI)
+--## 3. Backend Development (Node.js / Express / MongoDB)
 
 ### Local Dev Without Docker
 ```bash
 cd backend
 
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# Configure environment
+cp .env.example .env
 
-# Install dependencies (liboqs requires system lib)
-# On Ubuntu: sudo apt install cmake ninja-build libssl-dev
-pip install -r requirements.txt
+# Install dependencies
+npm install
 
-# Run dev server (hot reload)
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Run dev server (hot reload with Node 20+)
+npm run dev
+# Server listening on http://localhost:8000
 ```
 
 ### Project Structure
 ```
-backend/app/
-├── main.py              ← FastAPI app, middleware, router registration
-├── api/
-│   ├── auth.py          ← Registration, login, refresh
-│   ├── kms.py           ← Key management endpoints
-│   ├── documents.py     ← Upload, list, decrypt
-│   ├── blockchain.py    ← Ledger query endpoints
-│   └── attribution.py  ← Leaked doc analysis
-├── core/
-│   ├── config.py        ← All settings (pydantic-settings)
-│   ├── database.py      ← SQLAlchemy async engine
-│   ├── security.py      ← JWT, password hashing
-│   └── crypto.py        ← Low-level liboqs bindings
-├── models/
-│   ├── user.py          ← User, Role ORM models
-│   ├── keypair.py       ← PublicKey model
-│   ├── document.py      ← Document, KEMCapsule models
-│   └── session.py       ← DecryptionSession model
-└── services/
-    ├── crypto_service.py    ← Kyber, Dilithium, AES-GCM
-    ├── watermark_service.py ← PDF watermark embed/extract
-    ├── fabric_service.py    ← Hyperledger Fabric gateway
-    ├── ipfs_service.py      ← IPFS upload/download
-    ├── document_service.py  ← Document lifecycle
-    └── attribution_service.py ← Attribution engine
+backend/
+├── src/
+│   ├── config/
+│   │   ├── env.js                # Environment settings & server authority key
+│   │   └── db.js                 # Mongoose connection & lifecycle
+│   ├── models/
+│   │   ├── User.js               # Mongoose User model
+│   │   ├── Document.js           # Mongoose Document model
+│   │   └── ProvenanceLog.js      # Mongoose ProvenanceLog model
+│   ├── services/
+│   │   ├── cryptoService.js       # Native node:crypto operations
+│   │   ├── provenanceService.js   # Hash-chain creation & audit verification
+│   │   └── documentService.js     # Hybrid encryption & decryption attribution
+│   ├── middleware/
+│   │   ├── auth.js               # JWT verification & role middleware
+│   │   └── errorHandler.js       # Centralized error handler
+│   ├── controllers/
+│   │   ├── authController.js     # Registration, login, user keys
+│   │   ├── documentController.js # Upload, list, decrypt
+│   │   └── provenanceController.js# Audit query, verification, server key
+│   ├── routes/
+│   │   ├── authRoutes.js         # /api/auth
+│   │   ├── documentRoutes.js     # /api/documents
+│   │   └── provenanceRoutes.js   # /api/provenance
+│   └── server.js                 # Express application entrypoint
+├── tests/
+│   ├── crypto.test.js            # Unit tests for native crypto primitives
+│   ├── provenance.test.js        # Hash-chain integrity & tamper tests
+│   └── integration.test.js       # End-to-end API integration tests
+├── Dockerfile                    # Node.js production image
+└── package.json                  # Dependencies & test scripts
 ```
 
 ### Adding a New API Route
 
-1. Create route file in `backend/app/api/your_domain.py`:
-```python
-# Standard library
-from typing import List
+1. Create controller in `src/controllers/yourController.js`.
+2. Create route file in `src/routes/yourRoutes.js`:
+```javascript
+const express = require('express');
+const router = express.Router();
+const yourController = require('../controllers/yourController');
+const { authenticate } = require('../middleware/auth');
 
-# Third-party
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+router.get('/', authenticate, yourController.listResources);
 
-# Local
-from app.core.database import get_db
-from app.core.security import get_current_user
-from app.models.user import User
-from app.services import your_service
-
-router = APIRouter()
-
-
-@router.get("/", summary="List resources")
-async def list_resources(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> List[dict]:
-    """List all resources for the current user."""
-    return await your_service.get_all(db, current_user.id)
+module.exports = router;
 ```
 
-2. Register in `backend/app/main.py`:
-```python
-from app.api import your_domain
-app.include_router(your_domain.router, prefix="/api/your-domain", tags=["Your Domain"])
+3. Mount in `src/server.js`:
+```javascript
+app.use('/api/your-domain', yourRoutes);
 ```
 
 ### Running Tests
+Run all unit and integration tests using Node's native test runner:
 ```bash
 cd backend
+npm test
 
-# All tests
-pytest tests/ -v
-
-# With coverage report
-pytest tests/ -v --cov=app --cov-report=term-missing
-
-# Single test file
-pytest tests/test_watermark.py -v
-
-# Single test function
-pytest tests/test_crypto.py::test_kyber_roundtrip -v
+# Run a specific test suite
+node --test tests/crypto.test.js
+node --test tests/provenance.test.js
+node --test tests/integration.test.js
 ```
 
 ### Code Quality
 ```bash
-# Format with black
-black app/ tests/
-
-# Lint with flake8
-flake8 app/ tests/ --max-line-length 100
-
-# Type check with mypy
-mypy app/
+# Verify code syntax and style
+npm test
 ```
 
 ---
@@ -338,10 +315,10 @@ See `.env.example` for all variables. Key ones:
 
 ```env
 # Security
-SECRET_KEY=<256-bit-random-hex>             # JWT signing key
+JWT_SECRET=<secure-random-string-32-chars>     # JWT signing key
 
 # Services
-DATABASE_URL=postgresql+asyncpg://sih:pass@postgres:5432/sih237
+MONGODB_URI=mongodb://sih:sih_secret@mongodb:27017/sih237?authSource=admin
 IPFS_HOST=ipfs
 FABRIC_GATEWAY_HOST=peer0.org1.example.com
 
@@ -355,17 +332,17 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api
 
 ```bash
 # Feature branch naming
-git checkout -b feature/watermark-extraction
-git checkout -b fix/kyber-keygen-error
+git checkout -b feature/provenance-verification
+git checkout -b fix/auth-token-expiry
 git checkout -b docs/api-reference
 
 # Commit message format
-git commit -m "feat(watermark): add invisible text layer embedding"
-git commit -m "fix(crypto): handle Kyber decapsulation failure gracefully"
-git commit -m "test(attribution): add roundtrip watermark test"
+git commit -m "feat(provenance): add full cryptographic audit verification"
+git commit -m "fix(crypto): handle key unwrap failure gracefully"
+git commit -m "test(api): add end-to-end decryption attribution test"
 
 # Before pushing
-black app/ && flake8 app/ && pytest tests/ -v
+npm test
 ```
 
 ### Branch Strategy
@@ -381,16 +358,13 @@ docs/*        ← Documentation only changes
 
 ## 8. Debugging Common Issues
 
-### liboqs not found
+### MongoDB connection error
 ```bash
-# liboqs C library must be installed before pip install
-# In Docker: handled automatically
-# Local (Ubuntu):
-sudo apt install cmake ninja-build libssl-dev
-git clone --depth=1 https://github.com/open-quantum-safe/liboqs.git
-cd liboqs && mkdir build && cd build
-cmake -GNinja .. && ninja && sudo ninja install
-pip install liboqs-python
+# Verify MongoDB is running locally
+mongosh --eval "db.adminCommand('ping')"
+
+# Or restart Docker container
+docker compose restart mongodb
 ```
 
 ### Fabric peer connection refused
@@ -408,10 +382,4 @@ docker logs peer0.org1.example.com
 docker logs ipfs_node
 # If "initializing IPFS node" — wait 30 seconds, retry
 curl http://localhost:5001/api/v0/id
-```
-
-### PostgreSQL migration needed
-```bash
-cd backend
-alembic upgrade head
 ```

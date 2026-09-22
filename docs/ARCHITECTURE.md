@@ -113,9 +113,9 @@ Investigator uploads leaked PDF
 │                    DOCKER COMPOSE NETWORK                       │
 │                                                                 │
 │  ┌──────────┐    ┌──────────────┐    ┌──────────────────────┐  │
-│  │ Next.js  │───▶│  FastAPI     │───▶│  PostgreSQL           │  │
-│  │ Frontend │    │  Backend     │    │  (metadata)           │  │
-│  │ :3000    │    │  :8000       │    │  :5432               │  │
+│  │ Next.js  │───▶│  Express     │───▶│  MongoDB             │  │
+│  │ Frontend │    │  Backend     │    │  (metadata & chain)  │  │
+│  │ :3000    │    │  :8000       │    │  :27017              │  │
 │  └──────────┘    └──────┬───────┘    └──────────────────────┘  │
 │                         │                                       │
 │              ┌──────────┼──────────┐                           │
@@ -138,9 +138,9 @@ Investigator uploads leaked PDF
 
 | Service | Technology | Responsibility |
 |---|---|---|
-| `frontend` | Next.js 14 | UI dashboards, client-side PQC ops |
-| `backend` | FastAPI (Python) | All business logic, crypto, watermarking |
-| `postgres` | PostgreSQL 16 | Users, keys, documents, sessions metadata |
+| `frontend` | Next.js 14 | UI dashboards, client-side operations |
+| `backend` | Node.js / Express | Hybrid crypto, attribution logging, signed hash-chain |
+| `mongodb` | MongoDB 7 | Users, keys, documents, and provenance logs |
 | `ipfs` | Kubo (IPFS) | Encrypted document blob storage |
 | `fabric-peer` | HLF 2.5 | Blockchain peer — validates + stores transactions |
 | `fabric-orderer` | HLF 2.5 (RAFT) | Orders and finalizes blockchain transactions |
@@ -150,39 +150,33 @@ Investigator uploads leaked PDF
 
 ## 4. Module Breakdown (Backend)
 
-### `app/api/` — Route Handlers (Thin Layer)
+### `src/routes/` & `src/controllers/` — Route Handlers & Controllers
 ```
-auth.py        → /api/auth/register, /api/auth/login, /api/auth/refresh
-kms.py         → /api/kms/generate-keypair, /api/kms/register-pubkey
-documents.py   → /api/docs/upload, /api/docs/list, /api/docs/decrypt/{id}
-blockchain.py  → /api/blockchain/events, /api/blockchain/query
-attribution.py → /api/attribution/analyze
+authRoutes.js / authController.js         → /api/auth/register, /api/auth/login, /api/auth/me, /api/auth/recipients
+documentRoutes.js / documentController.js → /api/documents/upload, /api/documents, /api/documents/:id, /api/documents/:id/decrypt
+provenanceRoutes.js / provenanceController.js → /api/provenance/logs, /api/provenance/verify, /api/provenance/server-key
 ```
 
-### `app/services/` — Business Logic (Fat Layer)
+### `src/services/` — Business & Cryptographic Logic
 ```
-crypto_service.py     → AES-256-GCM, Kyber KEM, Dilithium sign/verify
-watermark_service.py  → PDF watermark embed + extract
-fabric_service.py     → Hyperledger Fabric gateway calls
-ipfs_service.py       → IPFS upload/download
-document_service.py   → Document lifecycle orchestration
-attribution_service.py → Watermark extraction + ledger attribution
+cryptoService.js     → AES-256-GCM, RSA-2048 keygen, RSA-OAEP key wrapping, SHA-256, RSA digital signing
+provenanceService.js → Sequential signed hash-chain generation & full audit verification
+documentService.js   → Multi-recipient hybrid encryption & decryption with attribution logging
 ```
 
-### `app/core/` — Infrastructure
+### `src/config/` & `src/middleware/` — Infrastructure
 ```
-config.py     → All env vars via pydantic-settings
-database.py   → SQLAlchemy async engine + session factory
-security.py   → JWT creation/validation, password hashing
-crypto.py     → Low-level liboqs bindings (Kyber, Dilithium)
+config/env.js        → Environment variables & server authority keypair loader
+config/db.js         → Mongoose MongoDB connection pool
+middleware/auth.js   → JWT Bearer authentication & role-based authorization
+middleware/errorHandler.js → Centralized JSON error formatting
 ```
 
-### `app/models/` — Database ORM
+### `src/models/` — Mongoose Schemas
 ```
-user.py       → User, Role
-keypair.py    → PublicKey (per user, per algorithm)
-document.py   → Document, RecipientAccess, KEMCapsule
-session.py    → DecryptionSession
+User.js              → User schema (username, email, password, role, publicKey, isActive)
+Document.js          → Document schema (title, senderId, fileHash, encryptedBlob, iv, authTag, recipientKeys)
+ProvenanceLog.js     → ProvenanceLog schema (sequenceNumber, docId, recipientId, action, status, prevHash, entryHash, signature)
 ```
 
 ---
