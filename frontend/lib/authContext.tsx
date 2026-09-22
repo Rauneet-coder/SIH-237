@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api, User } from './api';
+import { DEMO_PRIVATE_KEYS } from './demoKeys';
 
 interface AuthContextType {
   user: User | null;
@@ -148,10 +149,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('sih_auth_token', res.token);
       localStorage.setItem('sih_auth_user', JSON.stringify(res.user));
 
-      // Check if we have a stored private key for this user
-      const userKey = localStorage.getItem(`sih_key_${profile.username}`);
-      if (userKey) {
-        handleSetCachedPrivateKey(userKey);
+      // Load matching RSA private key
+      if (DEMO_PRIVATE_KEYS && DEMO_PRIVATE_KEYS[profile.username]) {
+        handleSetCachedPrivateKey(DEMO_PRIVATE_KEYS[profile.username]);
+      } else {
+        const userKey = localStorage.getItem(`sih_key_${profile.username}`);
+        if (userKey) {
+          handleSetCachedPrivateKey(userKey);
+        }
       }
     } catch {
       // If user doesn't exist, auto-register

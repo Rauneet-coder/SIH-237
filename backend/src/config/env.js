@@ -4,8 +4,12 @@ const cryptoService = require('../services/cryptoService');
 dotenv.config();
 
 // Ensure the server has an RSA keypair for signing provenance logs
-let serverPrivateKey = process.env.SERVER_PRIVATE_KEY;
-let serverPublicKey = process.env.SERVER_PUBLIC_KEY;
+let serverPrivateKey = process.env.SERVER_PRIVATE_KEY
+  ? process.env.SERVER_PRIVATE_KEY.replace(/\\n/g, '\n')
+  : null;
+let serverPublicKey = process.env.SERVER_PUBLIC_KEY
+  ? process.env.SERVER_PUBLIC_KEY.replace(/\\n/g, '\n')
+  : null;
 
 if (!serverPrivateKey || !serverPublicKey) {
   const generated = cryptoService.generateKeyPair(2048);

@@ -88,6 +88,7 @@ function DashboardContent() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {DEMO_PROFILES.map((p) => (
                   <button
+                    type="button"
                     key={p.username}
                     onClick={() => quickSwitchUser(p)}
                     className="card"
