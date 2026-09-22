@@ -8,8 +8,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev_secret_change_me_in_production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-    # ── Database ─────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://sih:sih_secret@postgres:5432/sih237"
+    # ── MongoDB ───────────────────────────────────────────
+    # Format: mongodb://user:password@host:port
+    MONGODB_URL: str = "mongodb://sih:sih_secret@mongodb:27017"
+    MONGODB_DB_NAME: str = "sih237"
 
     # ── IPFS ─────────────────────────────────────────────
     IPFS_HOST: str = "ipfs"

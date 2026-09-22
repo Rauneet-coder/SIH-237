@@ -10,9 +10,10 @@ from app.core.database import init_db
 async def lifespan(app: FastAPI):
     """
     Application lifespan handler.
-    init_db is skipped when running under tests (sqlite DATABASE_URL).
+    - init_db() connects to MongoDB and registers Beanie models.
+    - Skipped in test mode (MONGODB_URL contains 'mock' or not set).
     """
-    if not settings.DATABASE_URL.startswith("sqlite"):
+    if "mock" not in settings.MONGODB_URL:
         await init_db()
     yield
 
@@ -37,14 +38,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routers registered per milestone ─────────────────────────────────
-# M1: auth, kms         (uncommented in feature/m1-auth-kms)
-# M2: documents         (uncommented in feature/m2-encryption-ipfs)
-# M4: blockchain        (uncommented in feature/m4-blockchain-chaincode)
-# M6: attribution       (uncommented in feature/m6-attribution-engine)
+# ── Routers added per milestone ───────────────────────────────────────
+# M1:  from app.api import auth, kms
+#      app.include_router(auth.router,  prefix="/api/auth", tags=["Auth"])
+#      app.include_router(kms.router,   prefix="/api/kms",  tags=["KMS"])
+# M2:  documents router
+# M4:  blockchain router
+# M6:  attribution router
 
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Service health check — used by Docker health checks and load balancers."""
+    """Service health check — used by Docker and load balancers."""
     return {"status": "ok", "service": "SIH26237-Backend", "version": "1.0.0"}

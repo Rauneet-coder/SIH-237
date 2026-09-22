@@ -5,7 +5,7 @@ networks:
     driver: bridge
 
 volumes:
-  postgres-data:
+  mongodb-data:
   ipfs-data:
   couchdb0-data:
   couchdb1-data:
@@ -13,23 +13,24 @@ volumes:
 services:
 
   # ──────────────────────────────────────────────────────
-  # PostgreSQL — Application metadata database
+  # MongoDB — Application metadata database
+  # Simple JSON documents, no schema, no migrations needed
   # ──────────────────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: sih_postgres
+  mongodb:
+    image: mongo:7.0
+    container_name: sih_mongodb
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      MONGO_INITDB_ROOT_USERNAME: sih
+      MONGO_INITDB_ROOT_PASSWORD: sih_secret
+      MONGO_INITDB_DATABASE: sih237
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - mongodb-data:/data/db
     ports:
-      - "5432:5432"   # exposed for local dev tooling only
+      - "27017:27017"   # exposed for MongoDB Compass (GUI) during dev
     networks: [sih-net]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -234,7 +235,7 @@ services:
       - ./blockchain/network/crypto-config:/fabric/crypto-config:ro
     networks: [sih-net]
     depends_on:
-      postgres:
+      mongodb:
         condition: service_healthy
       ipfs:
         condition: service_healthy
