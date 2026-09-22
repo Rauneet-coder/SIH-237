@@ -16,7 +16,7 @@ interface AuthContextType {
   quickSwitchUser: (profile: DemoProfile) => Promise<void>;
 }
 
-export interface DemoProfile {
+export interface CommandOfficer {
   name: string;
   username: string;
   email: string;
@@ -24,43 +24,47 @@ export interface DemoProfile {
   description: string;
 }
 
-export const DEMO_PROFILES: DemoProfile[] = [
+export type DemoProfile = CommandOfficer;
+
+export const COMMAND_OFFICERS: CommandOfficer[] = [
   {
     name: 'Col. Sharma',
     username: 'col_sharma',
     email: 'col.sharma@mod.gov.in',
     role: 'sender',
-    description: 'Defence HQ Sender / Document Encryptor'
+    description: 'Defence HQ Command Dispatcher (Sender)'
   },
   {
     name: 'Maj. Gupta',
     username: 'maj_gupta',
     email: 'maj.gupta@mod.gov.in',
     role: 'recipient',
-    description: 'Northern Command Recipient'
+    description: 'Northern Command Authorized Recipient'
   },
   {
     name: 'Capt. Verma',
     username: 'capt_verma',
     email: 'capt.verma@mod.gov.in',
     role: 'recipient',
-    description: 'Eastern Command Recipient'
+    description: 'Eastern Command Authorized Recipient'
   },
   {
     name: 'Special Agent Roy',
     username: 'agent_roy',
     email: 'agent.roy@dia.gov.in',
     role: 'investigator',
-    description: 'Forensic Traitor Tracing Officer'
+    description: 'Defence Intelligence Agency (DIA) Forensic Officer'
   },
   {
     name: 'Auditor General Sen',
     username: 'auditor_sen',
     email: 'auditor.sen@mod.gov.in',
     role: 'admin',
-    description: 'Cryptographic Ledger Inspector'
+    description: 'Provenance Ledger Cryptographic Inspector'
   }
 ];
+
+export const DEMO_PROFILES = COMMAND_OFFICERS;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -99,6 +103,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(res.user);
       localStorage.setItem('sih_auth_token', res.token);
       localStorage.setItem('sih_auth_user', JSON.stringify(res.user));
+
+      // Auto-load private key from local vault or provisioned key storage
+      const storedKey = localStorage.getItem(`sih_key_${res.user.username}`);
+      if (storedKey) {
+        handleSetCachedPrivateKey(storedKey);
+      } else if (DEMO_PRIVATE_KEYS && DEMO_PRIVATE_KEYS[res.user.username]) {
+        handleSetCachedPrivateKey(DEMO_PRIVATE_KEYS[res.user.username]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -108,11 +120,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       const res = await api.register({ username, email, password, role });
-      setToken(null);
-      // Cache generated private key in sessionStorage for convenience
       if (res.privateKey) {
-        setCachedPrivateKey(res.privateKey);
-        sessionStorage.setItem('sih_private_key', res.privateKey);
+        localStorage.setItem(`sih_key_${username}`, res.privateKey);
+        handleSetCachedPrivateKey(res.privateKey);
       }
       return res.privateKey;
     } finally {

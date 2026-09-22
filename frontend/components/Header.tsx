@@ -115,7 +115,7 @@ export function Header({ chainHeight = 0, isChainValid = true }: HeaderProps) {
                   }}
                 >
                   <div className="uppercase-track text-dim text-xs" style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
-                    Switch Demo Tactical Profile
+                    Operational Command Officer Profiles
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', margin: '6px 0' }}>
