@@ -25,37 +25,37 @@ export function ConsoleNav({
       id: 'overview' as ConsoleTab,
       label: 'OVERVIEW',
       icon: LayoutDashboard,
-      badge: null
+      badge: 'TELEMETRY'
     },
     {
       id: 'dispatch' as ConsoleTab,
       label: 'ENCRYPT & DISPATCH',
       icon: Send,
-      badge: null
+      badge: 'SENDER / ADMIN'
     },
     {
       id: 'inbox' as ConsoleTab,
       label: 'SECURE INBOX',
       icon: Inbox,
-      badge: inboxCount > 0 ? inboxCount : null
+      badge: 'RECIPIENT'
     },
     {
       id: 'forensics' as ConsoleTab,
       label: 'TRAITOR TRACING',
       icon: Search,
-      badge: 'TARDOS'
+      badge: 'INVESTIGATOR'
     },
     {
       id: 'ledger' as ConsoleTab,
       label: 'PROVENANCE LEDGER',
       icon: Database,
-      badge: logCount > 0 ? `#${logCount}` : null
+      badge: logCount > 0 ? `#${logCount} AUDIT` : 'AUDITOR'
     },
     {
       id: 'vault' as ConsoleTab,
       label: 'KEY VAULT',
       icon: Key,
-      badge: null
+      badge: 'IDENTITY'
     }
   ];
 
