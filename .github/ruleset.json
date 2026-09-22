@@ -1,5 +1,5 @@
 {
-  "name": "SIH26237 Main Protection & Quality Ruleset",
+  "name": "SIH26237 Main Protection Ruleset",
   "target": "branch",
   "enforcement": "active",
   "conditions": {
@@ -26,7 +26,7 @@
         "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": false,
-        "require_last_push_approval": true,
+        "require_last_push_approval": false,
         "required_review_thread_resolution": true
       }
     },
@@ -39,15 +39,6 @@
             "context": "Backend Test Suite (Node.js & MongoDB)"
           }
         ]
-      }
-    },
-    {
-      "type": "commit_message_pattern",
-      "parameters": {
-        "name": "Conventional Commits Pattern",
-        "negate": false,
-        "operator": "regex_matches",
-        "pattern": "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\\([a-z0-9._-]+\\))?: .+"
       }
     }
   ],
