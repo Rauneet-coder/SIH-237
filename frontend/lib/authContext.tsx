@@ -83,10 +83,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (storedToken && storedUser) {
         setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-      }
-      if (storedKey) {
-        setCachedPrivateKey(storedKey);
+        const parsed = JSON.parse(storedUser);
+        setUser(parsed);
+
+        // Always resolve the key specific to the restored user
+        const userSpecificKey =
+          (parsed.username && DEMO_PRIVATE_KEYS[parsed.username]) ||
+          localStorage.getItem(`sih_key_${parsed.username}`) ||
+          sessionStorage.getItem(`sih_private_key_${parsed.username}`) ||
+          storedKey;
+        if (userSpecificKey) {
+          setCachedPrivateKey(userSpecificKey);
+        }
       }
     } catch (e) {
       console.error('Failed to restore session:', e);
@@ -94,6 +102,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     }
   }, []);
+
+  const handleSetCachedPrivateKey = (key: string | null, activeUsername?: string) => {
+    setCachedPrivateKey(key);
+    const uname = activeUsername || user?.username;
+    if (key) {
+      sessionStorage.setItem('sih_private_key', key);
+      if (uname) {
+        sessionStorage.setItem(`sih_private_key_${uname}`, key);
+      }
+    } else {
+      sessionStorage.removeItem('sih_private_key');
+      if (uname) {
+        sessionStorage.removeItem(`sih_private_key_${uname}`);
+      }
+    }
+  };
 
   const login = async (username: string, password: string) => {
     setIsLoading(true);
@@ -104,12 +128,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('sih_auth_token', res.token);
       localStorage.setItem('sih_auth_user', JSON.stringify(res.user));
 
-      // Auto-load private key from local vault or provisioned key storage
-      const storedKey = localStorage.getItem(`sih_key_${res.user.username}`);
-      if (storedKey) {
-        handleSetCachedPrivateKey(storedKey);
-      } else if (DEMO_PRIVATE_KEYS && DEMO_PRIVATE_KEYS[res.user.username]) {
-        handleSetCachedPrivateKey(DEMO_PRIVATE_KEYS[res.user.username]);
+      // Auto-load private key from demo keys or local vault
+      if (DEMO_PRIVATE_KEYS && DEMO_PRIVATE_KEYS[res.user.username]) {
+        handleSetCachedPrivateKey(DEMO_PRIVATE_KEYS[res.user.username], res.user.username);
+      } else {
+        const storedKey = localStorage.getItem(`sih_key_${res.user.username}`);
+        handleSetCachedPrivateKey(storedKey || null, res.user.username);
       }
     } finally {
       setIsLoading(false);
@@ -122,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const res = await api.register({ username, email, password, role });
       if (res.privateKey) {
         localStorage.setItem(`sih_key_${username}`, res.privateKey);
-        handleSetCachedPrivateKey(res.privateKey);
+        handleSetCachedPrivateKey(res.privateKey, username);
       }
       return res.privateKey;
     } finally {
@@ -139,15 +163,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.removeItem('sih_private_key');
   };
 
-  const handleSetCachedPrivateKey = (key: string | null) => {
-    setCachedPrivateKey(key);
-    if (key) {
-      sessionStorage.setItem('sih_private_key', key);
-    } else {
-      sessionStorage.removeItem('sih_private_key');
-    }
-  };
-
   const quickSwitchUser = async (profile: DemoProfile) => {
     setIsLoading(true);
     const password = 'Password@123';
@@ -161,12 +176,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Load matching RSA private key
       if (DEMO_PRIVATE_KEYS && DEMO_PRIVATE_KEYS[profile.username]) {
-        handleSetCachedPrivateKey(DEMO_PRIVATE_KEYS[profile.username]);
+        handleSetCachedPrivateKey(DEMO_PRIVATE_KEYS[profile.username], profile.username);
       } else {
         const userKey = localStorage.getItem(`sih_key_${profile.username}`);
-        if (userKey) {
-          handleSetCachedPrivateKey(userKey);
-        }
+        handleSetCachedPrivateKey(userKey || null, profile.username);
       }
     } catch {
       // If user doesn't exist, auto-register

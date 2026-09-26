@@ -57,22 +57,24 @@ export function Header({ chainHeight = 0, isChainValid = true }: HeaderProps) {
         </div>
 
         {/* Center: Real-time Security Telemetry Pills */}
-        <div style={{ display: 'none', alignItems: 'center', gap: '12px' }} className="telemetry-badges">
-          <div className="badge">
-            <span className="status-dot status-dot-green"></span>
-            <span>CIPHER: AES-256-GCM</span>
-          </div>
+        {user && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="badge">
+              <span className="status-dot status-dot-green"></span>
+              <span>CIPHER: AES-256-GCM</span>
+            </div>
 
-          <div className="badge">
-            <span className="status-dot status-dot-white"></span>
-            <span>TARDOS: 256-BIT CODEWORD</span>
-          </div>
+            <div className="badge">
+              <span className="status-dot status-dot-white"></span>
+              <span>TARDOS: 256-BIT CODEWORD</span>
+            </div>
 
-          <div className="badge">
-            <span className={`status-dot ${isChainValid ? 'status-dot-green' : 'status-dot-red'}`}></span>
-            <span>LEDGER: BLOCKS #{chainHeight}</span>
+            <div className="badge">
+              <span className={`status-dot ${isChainValid ? 'status-dot-green' : 'status-dot-red'}`}></span>
+              <span>LEDGER: BLOCKS #{chainHeight}</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Right: Active Role / Quick Switcher & User Profile */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -99,72 +101,79 @@ export function Header({ chainHeight = 0, isChainValid = true }: HeaderProps) {
               </button>
 
               {dropdownOpen && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    marginTop: '6px',
-                    width: '300px',
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-strong)',
-                    borderRadius: 'var(--radius-xs)',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
-                    zIndex: 100,
-                    padding: '8px'
-                  }}
-                >
-                  <div className="uppercase-track text-dim text-xs" style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
-                    Operational Command Officer Profiles
-                  </div>
+                <>
+                  {/* Click-away overlay to dismiss dropdown */}
+                  <div
+                    style={{ position: 'fixed', inset: 0, zIndex: 90 }}
+                    onClick={() => setDropdownOpen(false)}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: '6px',
+                      width: '300px',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: 'var(--radius-xs)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
+                      zIndex: 100,
+                      padding: '8px'
+                    }}
+                  >
+                    <div className="uppercase-track text-dim text-xs" style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                      Operational Command Officer Profiles
+                    </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', margin: '6px 0' }}>
-                    {DEMO_PROFILES.map((p) => {
-                      const isActive = user.username === p.username;
-                      return (
-                        <button
-                          key={p.username}
-                          onClick={() => handleSwitch(p)}
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'flex-start',
-                            padding: '8px',
-                            background: isActive ? 'var(--bg-elevated)' : 'transparent',
-                            border: 'none',
-                            borderRadius: 'var(--radius-xs)',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            color: 'inherit',
-                            transition: 'background 0.15s'
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = isActive ? 'var(--bg-elevated)' : 'transparent')}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                            <span className="font-semibold text-xs text-primary">{p.name}</span>
-                            <span className="badge text-xs" style={{ fontSize: '9px', padding: '1px 4px' }}>{p.role}</span>
-                          </div>
-                          <span className="text-xs text-muted" style={{ fontSize: '10px', marginTop: '2px' }}>{p.description}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', margin: '6px 0' }}>
+                      {DEMO_PROFILES.map((p) => {
+                        const isActive = user.username === p.username;
+                        return (
+                          <button
+                            key={p.username}
+                            onClick={() => handleSwitch(p)}
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'flex-start',
+                              padding: '8px',
+                              background: isActive ? 'var(--bg-elevated)' : 'transparent',
+                              border: 'none',
+                              borderRadius: 'var(--radius-xs)',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              color: 'inherit',
+                              transition: 'background 0.15s'
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = isActive ? 'var(--bg-elevated)' : 'transparent')}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                              <span className="font-semibold text-xs text-primary">{p.name}</span>
+                              <span className="badge text-xs" style={{ fontSize: '9px', padding: '1px 4px' }}>{p.role}</span>
+                            </div>
+                            <span className="text-xs text-muted" style={{ fontSize: '10px', marginTop: '2px' }}>{p.description}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                  <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '6px' }}>
-                    <button
-                      onClick={() => {
-                        logout();
-                        setDropdownOpen(false);
-                      }}
-                      className="btn btn-danger btn-sm"
-                      style={{ width: '100%', justifyContent: 'center' }}
-                    >
-                      <LogOut size={12} />
-                      <span>DISCONNECT TERMINAL</span>
-                    </button>
+                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '6px' }}>
+                      <button
+                        onClick={() => {
+                          logout();
+                          setDropdownOpen(false);
+                        }}
+                        className="btn btn-danger btn-sm"
+                        style={{ width: '100%', justifyContent: 'center' }}
+                      >
+                        <LogOut size={12} />
+                        <span>DISCONNECT TERMINAL</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           ) : (

@@ -18,6 +18,7 @@ function DashboardContent() {
   const [activeTab, setActiveTab] = useState<ConsoleTab>('overview');
   const [chainHeight, setChainHeight] = useState(0);
   const [isChainValid, setIsChainValid] = useState(true);
+  const [consoleKey, setConsoleKey] = useState(0);
 
   // Auth Modal State
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -46,6 +47,12 @@ function DashboardContent() {
     const interval = setInterval(refreshLedgerStatus, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // Tab switch with remount for entry animation
+  const handleTabChange = (tab: ConsoleTab) => {
+    setActiveTab(tab);
+    setConsoleKey(k => k + 1);
+  };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,7 +149,7 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Auth Gate: If not authenticated, show Tactical Operational Terminal Gate */}
+      {/* Auth Gate */}
       {!user ? (
         <main className="container-full" style={{ padding: '40px 24px', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: '100%', maxWidth: '880px', display: 'grid', gridTemplateColumns: 'minmax(320px, 1.1fr) minmax(300px, 1fr)', gap: '32px' }}>
@@ -306,17 +313,19 @@ function DashboardContent() {
         <>
           <ConsoleNav
             activeTab={activeTab}
-            onTabChange={setActiveTab}
+            onTabChange={handleTabChange}
             logCount={chainHeight}
           />
 
           <main className="container-full" style={{ padding: '24px', flex: 1 }}>
-            {activeTab === 'overview' && <OverviewConsole onNavigate={setActiveTab} />}
-            {activeTab === 'dispatch' && <DispatchConsole onSuccess={refreshLedgerStatus} />}
-            {activeTab === 'inbox' && <InboxConsole />}
-            {activeTab === 'forensics' && <ForensicsConsole />}
-            {activeTab === 'ledger' && <LedgerConsole />}
-            {activeTab === 'vault' && <KeyVaultConsole />}
+            <div key={consoleKey} className="console-enter">
+              {activeTab === 'overview' && <OverviewConsole onNavigate={handleTabChange} />}
+              {activeTab === 'dispatch' && <DispatchConsole onSuccess={refreshLedgerStatus} />}
+              {activeTab === 'inbox' && <InboxConsole />}
+              {activeTab === 'forensics' && <ForensicsConsole />}
+              {activeTab === 'ledger' && <LedgerConsole />}
+              {activeTab === 'vault' && <KeyVaultConsole />}
+            </div>
           </main>
         </>
       )}
