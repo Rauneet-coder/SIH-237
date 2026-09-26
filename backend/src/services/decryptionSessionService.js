@@ -8,6 +8,7 @@ const cryptoService = require('./cryptoService');
 const fingerprintService = require('./fingerprintService');
 const canonicalEventService = require('./canonicalEventService');
 const provenanceService = require('./provenanceService');
+const fabricService = require('./fabricService');
 const {
   NotFoundError,
   AuthorizationError,
@@ -200,7 +201,22 @@ const decryptionSessionService = {
       session.status = 'SIGNED';
       await session.save();
 
-      // ── STAGE 5: Provenance Ledger Commitment ────────────────────────────────
+      // ── STAGE 5: Provenance Ledger Commitment (Hyperledger Fabric) ────────────
+      const fabricRecord = await fabricService.recordDecryptionEvent({
+        eventId: `evt_${session.sessionId}`,
+        eventDigest,
+        documentId: document.documentId || document._id.toString(),
+        documentHash: document.fileHash,
+        recipientId: recipientId.toString(),
+        sessionId: session.sessionId,
+        watermarkId,
+        watermarkCommitment,
+        signingKeyId: canonicalEvent.signingKeyId,
+        signature,
+        timestamp: canonicalEvent.timestamp
+      });
+
+      // Dual-logged to local hash-chained provenance log
       const logEntry = await provenanceService.logProvenanceEvent({
         docId: document._id,
         recipientId,
@@ -211,11 +227,12 @@ const decryptionSessionService = {
           watermarkId,
           watermarkCommitment,
           eventDigest,
+          fabricTxId: fabricRecord.txId,
           mlDsaSignaturePrefix: signature.slice(0, 24)
         }
       });
 
-      session.ledgerTxId = `TX-LOCAL-${logEntry.sequenceNumber}`;
+      session.ledgerTxId = fabricRecord.txId;
       session.status = 'COMMITTED';
       await session.save();
 

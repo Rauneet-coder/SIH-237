@@ -1,5 +1,6 @@
 const ProvenanceLog = require('../models/ProvenanceLog');
 const provenanceService = require('../services/provenanceService');
+const fabricService = require('../services/fabricService');
 const env = require('../config/env');
 
 /**
@@ -64,8 +65,92 @@ async function getServerPublicKey(req, res, next) {
   }
 }
 
+/**
+ * Hyperledger Fabric: Get ledger network and sync status
+ */
+async function getFabricStatus(req, res, next) {
+  try {
+    const status = await fabricService.getLedgerStatus();
+    return res.json({ success: true, status });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Hyperledger Fabric: Get specific event by eventId
+ */
+async function getFabricEvent(req, res, next) {
+  try {
+    const { eventId } = req.params;
+    const event = await fabricService.getEvent(eventId);
+    return res.json({ success: true, event });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Hyperledger Fabric: Query events by watermark commitment or watermark ID
+ */
+async function queryFabricByWatermark(req, res, next) {
+  try {
+    const { watermarkQuery } = req.params;
+    const events = await fabricService.queryByWatermark(watermarkQuery);
+    return res.json({ success: true, count: events.length, events });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Hyperledger Fabric: Query all decryption events for a document
+ */
+async function queryFabricByDocument(req, res, next) {
+  try {
+    const { documentId } = req.params;
+    const events = await fabricService.queryByDocument(documentId);
+    return res.json({ success: true, count: events.length, events });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Hyperledger Fabric: Query all decryption events for a recipient
+ */
+async function queryFabricByRecipient(req, res, next) {
+  try {
+    const { recipientId } = req.params;
+    const events = await fabricService.queryByRecipient(recipientId);
+    return res.json({ success: true, count: events.length, events });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Hyperledger Fabric: Cryptographically verify event integrity on-chain
+ */
+async function verifyFabricEvent(req, res, next) {
+  try {
+    const { eventId } = req.params;
+    const verification = await fabricService.verifyEventIntegrity(eventId);
+    return res.json({ success: true, verification });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   listLogs,
   verifyProvenanceChain,
-  getServerPublicKey
+  getServerPublicKey,
+  getFabricStatus,
+  getFabricEvent,
+  queryFabricByWatermark,
+  queryFabricByDocument,
+  queryFabricByRecipient,
+  verifyFabricEvent
 };
+
