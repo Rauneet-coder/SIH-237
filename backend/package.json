@@ -21,6 +21,7 @@
   "author": "Ministry of Defence | SIH26237",
   "license": "ISC",
   "dependencies": {
+    "@noble/post-quantum": "^0.7.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
