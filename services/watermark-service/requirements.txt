@@ -1,0 +1,10 @@
+fastapi==0.111.0
+uvicorn==0.30.1
+pydantic==2.7.4
+python-multipart==0.0.9
+numpy==1.26.4
+reedsolo==1.7.0
+pillow==10.3.0
+PyMuPDF==1.24.5
+opencv-python-headless==4.9.0.80
+scipy==1.13.1

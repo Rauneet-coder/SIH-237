@@ -9,6 +9,7 @@ volumes:
   ipfs-data:
   couchdb0-data:
   couchdb1-data:
+  encrypted-vault:
 
 services:
 
@@ -219,6 +220,29 @@ services:
     depends_on: [orderer, couchdb1]
 
   # ──────────────────────────────────────────────────────
+  # Forensic Watermark & Robustness Microservice
+  # ──────────────────────────────────────────────────────
+  watermark-service:
+    build:
+      context: ./services/watermark-service
+      dockerfile: Dockerfile
+    container_name: sih_watermark_service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./services/watermark-service:/app
+    networks:
+      sih-net:
+        aliases: [watermark-service]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ──────────────────────────────────────────────────────
   # Node.js Express Backend
   # ──────────────────────────────────────────────────────
   backend:
@@ -228,11 +252,15 @@ services:
     container_name: sih_backend
     restart: unless-stopped
     env_file: .env
+    environment:
+      - WATERMARK_SERVICE_URL=http://watermark-service:8001
+      - ENCRYPTED_STORAGE_DIR=/app/storage/encrypted
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
       - /app/node_modules
+      - encrypted-vault:/app/storage/encrypted
     networks: [sih-net]
     depends_on:
       mongodb:
