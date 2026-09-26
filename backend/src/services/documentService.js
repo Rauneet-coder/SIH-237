@@ -1,15 +1,22 @@
+const crypto = require('node:crypto');
 const Document = require('../models/Document');
 const User = require('../models/User');
 const cryptoService = require('./cryptoService');
+const keyEnvelopeService = require('./keyEnvelopeService');
+const keyAgentClient = require('./keyAgentClient');
 const provenanceService = require('./provenanceService');
 const collusionService = require('./collusionService');
+const logger = require('../utils/logger');
+const { NotFoundError, AuthorizationError, ValidationError, CryptoError } = require('../utils/errors');
 
 /**
  * Upload and encrypt a document for multi-recipient distribution
- * - Generates a 32-byte AES symmetric key
- * - Encrypts plaintext file using AES-256-GCM
- * - Encrypts the symmetric key individually for each recipient using RSA-OAEP
- * - Immutably logs the upload in the provenance chain
+ * - Generates random 32-byte AES DEK
+ * - Encrypts plaintext file exactly ONCE using AES-256-GCM
+ * - Encapsulates DEK for each recipient using NIST FIPS 203 ML-KEM-1024
+ * - Retains legacy RSA-OAEP wrapping for backwards compatibility
+ * - Immutably logs upload event
+ * - Securely zeroizes plaintext DEK from volatile memory
  */
 async function uploadAndEncryptDocument({
   title,
@@ -17,45 +24,92 @@ async function uploadAndEncryptDocument({
   fileName,
   mimeType = 'application/pdf',
   senderId,
-  recipientIds = []
+  recipientIds = [],
+  classification = 'CONFIDENTIAL'
 }) {
   if (!title) {
-    throw new Error('Document title is required');
+    throw new ValidationError('Document title is required');
   }
   if (!fileBuffer || fileBuffer.length === 0) {
-    throw new Error('Document file buffer is empty or missing');
+    throw new ValidationError('Document file buffer is empty or missing');
   }
   if (!senderId) {
-    throw new Error('Sender ID is required');
+    throw new ValidationError('Sender ID is required');
   }
 
-  // 1. Calculate plaintext SHA-256 hash
+  // 1. Calculate plaintext SHA-256 hash (canonical binding)
   const fileHash = cryptoService.computeHash(fileBuffer);
+  const documentId = `DOC-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
   // 2. Fetch and validate recipients
   const recipients = await User.find({ _id: { $in: recipientIds }, isActive: true }).exec();
   if (recipients.length === 0 && recipientIds.length > 0) {
-    throw new Error('No valid active recipients found for specified IDs');
+    throw new ValidationError('No valid active recipients found for specified IDs');
   }
 
-  // 3. Generate symmetric key and encrypt document
+  // 3. Generate symmetric DEK and encrypt document ONCE with AES-256-GCM
   const symmetricKey = cryptoService.generateSymmetricKey();
   const { encryptedBlob, iv, authTag } = cryptoService.encryptDocument(fileBuffer, symmetricKey);
 
-  // 4. Wrap symmetric key for each recipient with their RSA public key
-  const recipientKeys = recipients.map((recipient) => {
-    const encryptedSymmetricKey = cryptoService.encryptSymmetricKey(
-      symmetricKey,
-      recipient.publicKey
-    );
-    return {
-      recipientId: recipient._id,
-      encryptedSymmetricKey
-    };
-  });
+  // 4. Build per-recipient ML-KEM Key Envelopes and legacy RSA keys
+  const keyEnvelopes = [];
+  const recipientKeys = [];
 
-  // 5. Store document record
+  for (const recipient of recipients) {
+    // Post-Quantum ML-KEM Envelope
+    if (recipient.mlKemPublicKey) {
+      try {
+        const envelope = await keyEnvelopeService.createEnvelope({
+          dek: symmetricKey,
+          recipientId: recipient._id.toString(),
+          mlKemPublicKey: recipient.mlKemPublicKey,
+          documentId,
+          documentHash: fileHash
+        });
+        keyEnvelopes.push(envelope);
+      } catch (err) {
+        logger.warn(`Failed to create ML-KEM envelope for recipient ${recipient.username}`, {
+          error: err.message
+        });
+      }
+    }
+
+    // Legacy RSA Wrapping
+    if (recipient.publicKey) {
+      const encryptedSymmetricKey = cryptoService.encryptSymmetricKey(
+        symmetricKey,
+        recipient.publicKey
+      );
+      recipientKeys.push({
+        recipientId: recipient._id,
+        encryptedSymmetricKey
+      });
+    }
+  }
+
+  // Also create an envelope for the sender so the sender can manage access later
+  const senderUser = await User.findById(senderId).exec();
+  if (senderUser && senderUser.mlKemPublicKey) {
+    try {
+      const senderEnvelope = await keyEnvelopeService.createEnvelope({
+        dek: symmetricKey,
+        recipientId: senderUser._id.toString(),
+        mlKemPublicKey: senderUser.mlKemPublicKey,
+        documentId,
+        documentHash: fileHash
+      });
+      keyEnvelopes.push(senderEnvelope);
+    } catch (err) {
+      logger.warn('Failed to create sender key envelope', { error: err.message });
+    }
+  }
+
+  // 5. SECURE ZEROIZATION: Purge plaintext DEK from volatile memory
+  symmetricKey.fill(0);
+
+  // 6. Store document record
   const document = new Document({
+    documentId,
     title,
     senderId,
     fileName: fileName || 'document.pdf',
@@ -65,12 +119,22 @@ async function uploadAndEncryptDocument({
     encryptedBlob,
     iv,
     authTag,
-    recipientKeys
+    classification,
+    recipientKeys,
+    keyEnvelopes
   });
 
   await document.save();
 
-  // 6. Log upload event to provenance audit chain
+  logger.securityAudit('DOCUMENT_UPLOAD_ENCRYPT_ONCE', {
+    docId: document._id.toString(),
+    documentId,
+    fileHash,
+    recipientCount: keyEnvelopes.length,
+    algorithm: 'AES-256-GCM + ML-KEM-1024'
+  });
+
+  // 7. Log upload event to provenance audit chain
   await provenanceService.logProvenanceEvent({
     docId: document._id,
     recipientId: senderId,
@@ -80,7 +144,7 @@ async function uploadAndEncryptDocument({
       title,
       fileName: document.fileName,
       fileHash,
-      recipientCount: recipientKeys.length
+      recipientCount: keyEnvelopes.length
     }
   });
 
@@ -89,26 +153,32 @@ async function uploadAndEncryptDocument({
 
 /**
  * Decrypt document for an authorized recipient with attribution logging
- * - Logs DECRYPT_ATTEMPT in provenance chain
- * - Validates recipient is authorized
- * - Unwraps recipient's symmetric key using recipient's private key
- * - Decrypts document via AES-256-GCM and verifies hash
- * - Logs DECRYPT_SUCCESS or DECRYPT_FAILURE in provenance chain
+ * Supports both modern ML-KEM key agent decapsulation and legacy RSA keys
  */
-async function decryptDocumentForRecipient({ docId, recipientId, recipientPrivateKeyPem }) {
+async function decryptDocumentForRecipient({
+  docId,
+  recipientId,
+  recipientPrivateKeyPem = null,
+  recipientUsername = null
+}) {
   const document = await Document.findById(docId).exec();
   if (!document) {
-    const error = new Error('Document not found');
-    error.statusCode = 404;
-    throw error;
+    throw new NotFoundError('Document');
   }
 
-  // Check if recipient is authorized in recipientKeys
-  const recipientEntry = document.recipientKeys.find(
+  // Find recipient user profile
+  const user = await User.findById(recipientId).exec();
+  const username = recipientUsername || (user ? user.username : recipientId.toString());
+
+  // Check if recipient is authorized in ML-KEM envelopes or legacy keys
+  const mlKemEnvelope = (document.keyEnvelopes || []).find(
+    (env) => env.recipientId.toString() === recipientId.toString()
+  );
+  const legacyEntry = (document.recipientKeys || []).find(
     (rk) => rk.recipientId.toString() === recipientId.toString()
   );
 
-  if (!recipientEntry) {
+  if (!mlKemEnvelope && !legacyEntry) {
     await provenanceService.logProvenanceEvent({
       docId,
       recipientId,
@@ -116,9 +186,7 @@ async function decryptDocumentForRecipient({ docId, recipientId, recipientPrivat
       status: 'FAILURE',
       details: { reason: 'Unauthorized: recipient not in document distribution list' }
     });
-    const error = new Error('Access denied: you are not an authorized recipient for this document');
-    error.statusCode = 403;
-    throw error;
+    throw new AuthorizationError('Access denied: you are not an authorized recipient for this document');
   }
 
   // Log decryption attempt
@@ -130,27 +198,52 @@ async function decryptDocumentForRecipient({ docId, recipientId, recipientPrivat
     details: { fileHash: document.fileHash }
   });
 
-  // Unwrap symmetric key
+  // 1. Recover DEK via ML-KEM Key Agent OR legacy RSA
   let symmetricKey;
-  try {
-    symmetricKey = cryptoService.decryptSymmetricKey(
-      recipientEntry.encryptedSymmetricKey,
-      recipientPrivateKeyPem
-    );
-  } catch (err) {
+  if (mlKemEnvelope && keyAgentClient.hasRecipient(username)) {
+    try {
+      symmetricKey = await keyEnvelopeService.unwrapEnvelope({
+        envelope: mlKemEnvelope,
+        recipientUsername: username,
+        recipientId: recipientId.toString(),
+        documentId: document.documentId || document._id.toString(),
+        documentHash: document.fileHash
+      });
+    } catch (err) {
+      logger.warn('ML-KEM unwrap failed, falling back to legacy if provided', { error: err.message });
+    }
+  }
+
+  if (!symmetricKey && legacyEntry && recipientPrivateKeyPem) {
+    try {
+      symmetricKey = cryptoService.decryptSymmetricKey(
+        legacyEntry.encryptedSymmetricKey,
+        recipientPrivateKeyPem
+      );
+    } catch (err) {
+      await provenanceService.logProvenanceEvent({
+        docId,
+        recipientId,
+        action: 'DECRYPT_FAILURE',
+        status: 'FAILURE',
+        details: { reason: `RSA-OAEP private key unwrap error: ${err.message}` }
+      });
+      throw new ValidationError(`Decryption failed: invalid private key provided (${err.message})`);
+    }
+  }
+
+  if (!symmetricKey) {
     await provenanceService.logProvenanceEvent({
       docId,
       recipientId,
       action: 'DECRYPT_FAILURE',
       status: 'FAILURE',
-      details: { reason: `RSA-OAEP private key unwrap error: ${err.message}` }
+      details: { reason: 'Unable to recover DEK: no active ML-KEM Key Agent or valid RSA key' }
     });
-    const error = new Error('Decryption failed: invalid private key provided');
-    error.statusCode = 400;
-    throw error;
+    throw new AuthorizationError('Unable to recover document encryption key. Cryptographic credentials missing or revoked.');
   }
 
-  // Decrypt document with AES-256-GCM
+  // 2. Decrypt document with AES-256-GCM and verify authentication tag
   let decryptedBuffer;
   try {
     decryptedBuffer = cryptoService.decryptDocument(
@@ -167,12 +260,13 @@ async function decryptDocumentForRecipient({ docId, recipientId, recipientPrivat
       status: 'FAILURE',
       details: { reason: `AES-256-GCM decryption failed: ${err.message}` }
     });
-    const error = new Error('Document decryption failed: ciphertext or auth tag invalid');
-    error.statusCode = 400;
-    throw error;
+    throw new CryptoError('Document decryption failed: ciphertext or auth tag invalid');
+  } finally {
+    // Zeroize recovered DEK from volatile memory
+    symmetricKey.fill(0);
   }
 
-  // Integrity validation
+  // 3. Integrity validation: Assert SHA-256(Decrypted) == fileHash
   const decryptedHash = cryptoService.computeHash(decryptedBuffer);
   if (decryptedHash !== document.fileHash) {
     await provenanceService.logProvenanceEvent({
@@ -182,12 +276,10 @@ async function decryptDocumentForRecipient({ docId, recipientId, recipientPrivat
       status: 'FAILURE',
       details: { reason: 'Decrypted content hash mismatch' }
     });
-    const error = new Error('Integrity check failed: document hash mismatch');
-    error.statusCode = 500;
-    throw error;
+    throw new CryptoError('Integrity check failed: document hash mismatch');
   }
 
-  // Generate collusion-resistant fingerprint codeword for this recipient
+  // 4. Generate fingerprint codeword
   const biases = collusionService.generateBiasVector(document._id.toString());
   const codeword = collusionService.generateRecipientCodeword(
     document._id.toString(),
@@ -195,7 +287,7 @@ async function decryptDocumentForRecipient({ docId, recipientId, recipientPrivat
     biases
   );
 
-  // Decryption success attribution log
+  // 5. Decryption success attribution log
   const logEntry = await provenanceService.logProvenanceEvent({
     docId,
     recipientId,
@@ -209,7 +301,7 @@ async function decryptDocumentForRecipient({ docId, recipientId, recipientPrivat
     }
   });
 
-  // Embed forensic collusion-secure fingerprint into the delivered document
+  // 6. Embed forensic collusion-secure fingerprint
   const fingerprintedBuffer = collusionService.embedForensicFingerprint(decryptedBuffer, {
     codeword,
     recipientId,
