@@ -7,7 +7,7 @@ const Device = require('../src/models/Device');
 const keyAgentClient = require('../src/services/keyAgentClient');
 const env = require('../src/config/env');
 
-const TEST_DB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/sih237_identity_test';
+const TEST_DB_URI = 'mongodb://127.0.0.1:27017/sih237_test_identity';
 
 let server;
 let baseUrl;

@@ -9,7 +9,7 @@ const keyEnvelopeService = require('../src/services/keyEnvelopeService');
 const documentService = require('../src/services/documentService');
 const cryptoService = require('../src/services/cryptoService');
 
-const TEST_DB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/sih237_encryption_test';
+const TEST_DB_URI = 'mongodb://127.0.0.1:27017/sih237_test_encryption';
 
 before(async () => {
   if (mongoose.connection.readyState === 0) {
