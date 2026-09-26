@@ -15,6 +15,10 @@ export function KeyVaultConsole() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
+    setInputKey(cachedPrivateKey || '');
+  }, [cachedPrivateKey, user?.username]);
+
+  useEffect(() => {
     async function loadServerKey() {
       try {
         const res = await api.getServerPublicKey();

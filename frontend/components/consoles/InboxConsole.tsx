@@ -1,15 +1,18 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../lib/authContext';
+import { useAuth, COMMAND_OFFICERS } from '../../lib/authContext';
 import { api, DocumentMeta } from '../../lib/api';
-import { Inbox, Key, Eye, Download, ShieldCheck, AlertCircle, Lock, FileText, CheckCircle } from 'lucide-react';
+import { DEMO_PRIVATE_KEYS } from '../../lib/demoKeys';
+import { Inbox, Key, Eye, Download, ShieldCheck, AlertCircle, Lock, FileText, CheckCircle, RefreshCw, UserCheck } from 'lucide-react';
 
 export function InboxConsole() {
-  const { user, token, cachedPrivateKey, setCachedPrivateKey } = useAuth();
+  const { user, token, cachedPrivateKey, setCachedPrivateKey, quickSwitchUser } = useAuth();
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<DocumentMeta | null>(null);
-  const [privateKeyPem, setPrivateKeyPem] = useState(cachedPrivateKey || '');
+  const [privateKeyPem, setPrivateKeyPem] = useState(
+    (user?.username && DEMO_PRIVATE_KEYS[user.username]) || cachedPrivateKey || ''
+  );
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [decryptedResult, setDecryptedResult] = useState<{
     fileName: string;
@@ -22,12 +25,17 @@ export function InboxConsole() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Sync cached key if changed
+  // Automatically sync private key whenever the active user or cached key changes
   useEffect(() => {
-    if (cachedPrivateKey && !privateKeyPem) {
+    if (user?.username && DEMO_PRIVATE_KEYS[user.username]) {
+      setPrivateKeyPem(DEMO_PRIVATE_KEYS[user.username]);
+    } else if (cachedPrivateKey) {
       setPrivateKeyPem(cachedPrivateKey);
+    } else {
+      setPrivateKeyPem('');
     }
-  }, [cachedPrivateKey, privateKeyPem]);
+    setError(null);
+  }, [user?.username, cachedPrivateKey]);
 
   const loadDocuments = async () => {
     if (!token) return;
@@ -194,50 +202,144 @@ export function InboxConsole() {
                 <div style={{ textAlign: 'right' }}>
                   <div className="text-xs text-muted">Sender</div>
                   <div className="text-xs font-semibold text-primary">{selectedDoc.senderId?.username || 'Unknown'}</div>
+                  {(() => {
+                    const recUsernames = (selectedDoc.recipientKeys || [])
+                      .map((rk: any) => rk.recipientId?.username || (typeof rk.recipientId === 'string' ? rk.recipientId : null))
+                      .filter(Boolean);
+                    if (recUsernames.length === 0) return null;
+                    return (
+                      <div style={{ marginTop: '6px' }}>
+                        <div className="text-xs text-muted">Recipients</div>
+                        <div className="font-mono text-xs text-secondary">{recUsernames.join(', ')}</div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
               {/* Private Key Decryption Input Form */}
-              {!decryptedResult && (
-                <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Key size={13} />
-                      <span>Recipient RSA-2048 Private Key (PEM)</span>
-                    </label>
-                    <label style={{ fontSize: '11px', color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline' }}>
-                      Upload .pem file
-                      <input type="file" accept=".pem,.key,.txt" onChange={handlePrivateKeyFileUpload} style={{ display: 'none' }} />
-                    </label>
-                  </div>
+              {!decryptedResult && (() => {
+                const isAuthorizedRecipient = Boolean(
+                  selectedDoc.recipientKeys?.some((rk: any) => {
+                    const rId = rk.recipientId?._id || rk.recipientId;
+                    const rUsername = rk.recipientId?.username;
+                    return (user?._id && rId === user._id) || (user?.username && rUsername === user.username);
+                  })
+                );
+                const recipientUsernames = (selectedDoc.recipientKeys || [])
+                  .map((rk: any) => rk.recipientId?.username || (typeof rk.recipientId === 'string' ? rk.recipientId : null))
+                  .filter(Boolean);
 
-                  <textarea
-                    rows={4}
-                    value={privateKeyPem}
-                    onChange={(e) => setPrivateKeyPem(e.target.value)}
-                    placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;MIIEowIBAAKCAQEA0t...&#10;-----END RSA PRIVATE KEY-----"
-                    className="input-textarea input-mono"
-                    style={{ fontSize: '11px', resize: 'vertical' }}
-                  />
+                return (
+                  <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
+                    {/* Recipient Status Indicator */}
+                    {selectedDoc.recipientKeys && selectedDoc.recipientKeys.length > 0 && (
+                      !isAuthorizedRecipient ? (
+                        <div
+                          style={{
+                            padding: '10px 14px',
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: 'var(--radius-xs)',
+                            marginBottom: '14px',
+                            fontSize: '11px',
+                            lineHeight: '1.5'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f87171', fontWeight: 600, marginBottom: '4px' }}>
+                            <AlertCircle size={14} />
+                            <span>NOT AN AUTHORIZED RECIPIENT</span>
+                          </div>
+                          <div className="text-secondary">
+                            You are currently viewing as <span className="font-mono text-primary font-bold">{user?.username}</span>. 
+                            This encrypted envelope is addressed exclusively to: <span className="font-mono text-primary font-bold">{recipientUsernames.join(', ')}</span>.
+                          </div>
+                          {recipientUsernames.length > 0 && (
+                            <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span className="text-muted" style={{ fontSize: '10px' }}>Quick Switch:</span>
+                              {recipientUsernames.map((u: string) => {
+                                const profile = COMMAND_OFFICERS.find((p) => p.username === u);
+                                if (!profile) return null;
+                                return (
+                                  <button
+                                    key={u}
+                                    type="button"
+                                    onClick={() => quickSwitchUser(profile)}
+                                    className="badge badge-white hover:bg-white/20 transition-colors"
+                                    style={{ cursor: 'pointer', padding: '3px 8px' }}
+                                  >
+                                    Switch to {profile.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                          <span className="badge badge-success text-xs" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <CheckCircle size={11} />
+                            <span>Authorized Recipient: {user?.username}</span>
+                          </span>
+                        </div>
+                      )
+                    )}
 
-                  {error && (
-                    <div className="badge badge-danger" style={{ display: 'flex', width: '100%', padding: '8px 12px', marginTop: '10px' }}>
-                      <AlertCircle size={14} />
-                      <span>{error}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                      <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Key size={13} />
+                        <span>Recipient RSA-2048 Private Key (PEM)</span>
+                      </label>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        {user?.username && DEMO_PRIVATE_KEYS[user.username] && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPrivateKeyPem(DEMO_PRIVATE_KEYS[user.username]);
+                              setCachedPrivateKey(DEMO_PRIVATE_KEYS[user.username]);
+                              setError(null);
+                            }}
+                            className="text-xs text-secondary hover:underline cursor-pointer"
+                            style={{ background: 'none', border: 'none', padding: 0 }}
+                          >
+                            Auto-fill {user.username} Key
+                          </button>
+                        )}
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline' }}>
+                          Upload .pem file
+                          <input type="file" accept=".pem,.key,.txt" onChange={handlePrivateKeyFileUpload} style={{ display: 'none' }} />
+                        </label>
+                      </div>
                     </div>
-                  )}
 
-                  <button
-                    onClick={handleDecrypt}
-                    disabled={isDecrypting || !privateKeyPem.trim()}
-                    className="btn btn-primary"
-                    style={{ marginTop: '12px', width: '100%', padding: '12px' }}
-                  >
-                    <Lock size={14} />
-                    <span>{isDecrypting ? 'UNWRAPPING KEY & LOGGING ATTRIBUTION...' : 'DECRYPT DOCUMENT & VERIFY ATTRIBUTION'}</span>
-                  </button>
-                </div>
-              )}
+                    <textarea
+                      rows={4}
+                      value={privateKeyPem}
+                      onChange={(e) => setPrivateKeyPem(e.target.value)}
+                      placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;MIIEowIBAAKCAQEA0t...&#10;-----END RSA PRIVATE KEY-----"
+                      className="input-textarea input-mono"
+                      style={{ fontSize: '11px', resize: 'vertical' }}
+                    />
+
+                    {error && (
+                      <div className="badge badge-danger" style={{ display: 'flex', width: '100%', padding: '8px 12px', marginTop: '10px' }}>
+                        <AlertCircle size={14} />
+                        <span>{error}</span>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleDecrypt}
+                      disabled={isDecrypting || !privateKeyPem.trim() || !isAuthorizedRecipient}
+                      className="btn btn-primary"
+                      style={{ marginTop: '12px', width: '100%', padding: '12px' }}
+                    >
+                      <Lock size={14} />
+                      <span>{isDecrypting ? 'UNWRAPPING KEY & LOGGING ATTRIBUTION...' : 'DECRYPT DOCUMENT & VERIFY ATTRIBUTION'}</span>
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Decrypted Document Viewer with Dynamic Optical Watermark Overlay */}
