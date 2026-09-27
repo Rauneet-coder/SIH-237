@@ -270,8 +270,8 @@ export function ForensicsConsole() {
                 
                 {/* Collusion Detected Banner */}
                 {traceResult.report.collusionDetected ? (
-                  <div style={{ background: '#1c1212', border: '1px solid #7f1d1d', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171' }}>
+                  <div style={{ background: '#f7eae6', border: '1px solid #dfbcb2', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aa493c' }}>
                       <ShieldAlert size={18} />
                       <span className="font-bold text-sm">TRAITOR(S) IDENTIFIED WITH PROVABLE CONFIDENCE</span>
                     </div>
@@ -281,7 +281,7 @@ export function ForensicsConsole() {
                   </div>
                 ) : (
                   <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#52764a' }}>
                       <CheckCircle size={18} />
                       <span className="font-bold text-sm">NO COLLUSION DETECTED</span>
                     </div>
@@ -293,7 +293,7 @@ export function ForensicsConsole() {
 
                 {/* Accused Recipients Cards */}
                 {traceResult.report.accusedRecipients.map((acc) => (
-                  <div key={acc.recipientId} className="card card-elevated" style={{ border: '1px solid #ffffff' }}>
+                  <div key={acc.recipientId} className="card card-elevated" style={{ border: '1px solid var(--text-primary)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <span className="badge badge-danger">ACCUSED TRAITOR</span>
@@ -342,7 +342,7 @@ export function ForensicsConsole() {
                               style={{
                                 width: `${widthPercent}%`,
                                 height: '100%',
-                                background: isAccused ? '#ffffff' : '#3f3f46',
+                                background: isAccused ? 'var(--text-primary)' : '#b6afa3',
                                 transition: 'width 0.3s ease'
                               }}
                             />
@@ -356,7 +356,7 @@ export function ForensicsConsole() {
                 {/* Server Digital Signature Proof */}
                 <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
                   <div className="text-xs font-semibold text-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Award size={13} color="#34d399" />
+                    <Award size={13} color="#52764a" />
                     <span>Cryptographically Signed by Server Authority (RSA-SHA256)</span>
                   </div>
                   <div className="hex-box font-mono" style={{ fontSize: '9px', marginTop: '6px' }}>
@@ -457,8 +457,8 @@ export function ForensicsConsole() {
 
             {simResult ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ background: '#1c1212', border: '1px solid #7f1d1d', borderRadius: 'var(--radius-xs)', padding: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171' }}>
+                <div style={{ background: '#f7eae6', border: '1px solid #dfbcb2', borderRadius: 'var(--radius-xs)', padding: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aa493c' }}>
                     <ShieldAlert size={16} />
                     <span className="font-bold text-sm">COALITION SUCCESSFULLY UNMASKED</span>
                   </div>

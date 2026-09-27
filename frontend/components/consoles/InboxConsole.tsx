@@ -152,7 +152,7 @@ export function InboxConsole() {
                   style={{
                     padding: '12px',
                     borderRadius: 'var(--radius-xs)',
-                    border: isSelected ? '1px solid #ffffff' : '1px solid var(--border-subtle)',
+                    border: isSelected ? '1px solid var(--text-primary)' : '1px solid var(--border-subtle)',
                     background: isSelected ? 'var(--bg-elevated)' : 'var(--bg-secondary)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease'
@@ -246,7 +246,7 @@ export function InboxConsole() {
                             lineHeight: '1.5'
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f87171', fontWeight: 600, marginBottom: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#aa493c', fontWeight: 600, marginBottom: '4px' }}>
                             <AlertCircle size={14} />
                             <span>NOT AN AUTHORIZED RECIPIENT</span>
                           </div>
@@ -347,7 +347,7 @@ export function InboxConsole() {
               <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ShieldCheck size={18} color="#34d399" />
+                    <ShieldCheck size={18} color="#52764a" />
                     <span className="font-bold text-sm text-primary">DECRYPTED FORENSIC VIEW</span>
                     <span className="badge badge-success text-xs">ATTRIBUTION LOGGED</span>
                   </div>
@@ -361,7 +361,7 @@ export function InboxConsole() {
                 {/* Optical Watermark Notification */}
                 <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-xs)', padding: '10px 14px' }}>
                   <div className="text-xs font-semibold text-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <CheckCircle size={12} color="#ffffff" />
+                    <CheckCircle size={12} color="var(--text-primary)" />
                     <span>Dynamic Optical Forensic Watermark Applied</span>
                   </div>
                   <div className="text-xs text-muted" style={{ marginTop: '2px', fontSize: '11px' }}>
@@ -373,7 +373,7 @@ export function InboxConsole() {
                 <div
                   style={{
                     position: 'relative',
-                    background: '#070709',
+                    background: '#f1efeb',
                     border: '1px solid var(--border-strong)',
                     borderRadius: 'var(--radius-xs)',
                     padding: '24px',
@@ -383,7 +383,7 @@ export function InboxConsole() {
                     fontFamily: 'var(--font-mono)',
                     fontSize: '12px',
                     lineHeight: '1.7',
-                    color: '#e4e4e7',
+                    color: '#44413c',
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-all'
                   }}
@@ -409,7 +409,7 @@ export function InboxConsole() {
                     }}
                   >
                     {Array.from({ length: 12 }).map((_, i) => (
-                      <div key={i} style={{ fontSize: '11px', fontWeight: 700, color: '#ffffff', letterSpacing: '0.1em' }}>
+                      <div key={i} style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '0.1em' }}>
                         CONFIDENTIAL // {user?.username?.toUpperCase()} // {new Date().toISOString().slice(0, 10)} // TARDOS-FINGERPRINTED
                       </div>
                     ))}
