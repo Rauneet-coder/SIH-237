@@ -92,8 +92,8 @@ describe('Phase 3: Single Document Encryption (AES-256-GCM) & ML-KEM Key Envelop
     assert.equal(doc.classification, 'TOP_SECRET');
     assert.equal(doc.fileHash, cryptoService.computeHash(samplePlaintext));
 
-    // Verify Encrypt Once: single encrypted blob exists
-    assert.ok(doc.encryptedBlob, 'Single encrypted blob must exist');
+    // Verify Encrypt Once: single encrypted blob or storage vault path exists
+    assert.ok(doc.encryptedBlob || doc.storagePath, 'Single encrypted ciphertext must exist');
     assert.ok(doc.iv);
     assert.ok(doc.authTag);
 

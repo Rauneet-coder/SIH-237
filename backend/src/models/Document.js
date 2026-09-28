@@ -85,10 +85,16 @@ const documentSchema = new mongoose.Schema(
       required: true, // SHA-256 of original plaintext
       index: true
     },
-    // AES-256-GCM Single Ciphertext
+    // AES-256-GCM Single Ciphertext (or reference to filesystem vault)
     encryptedBlob: {
       type: String,
-      required: true // AES-256-GCM ciphertext (Base64)
+      default: null,
+      validate: {
+        validator: function(v) {
+          return Boolean(v || this.storagePath);
+        },
+        message: 'Either encryptedBlob or storagePath must be provided'
+      }
     },
     iv: {
       type: String,

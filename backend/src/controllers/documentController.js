@@ -38,13 +38,27 @@ async function uploadDocument(req, res, next) {
       return res.status(400).json({ error: 'A file attachment or fileContent is required.' });
     }
 
+    const classification = (req.body.classification || 'CONFIDENTIAL').toUpperCase();
+    const VALID_CLASSIFICATIONS = ['UNCLASSIFIED', 'RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'];
+    if (!VALID_CLASSIFICATIONS.includes(classification)) {
+      return res.status(400).json({
+        error: `Invalid classification level: ${classification}. Must be one of ${VALID_CLASSIFICATIONS.join(', ')}`
+      });
+    }
+
+    const validFrom = req.body.validFrom || null;
+    const validUntil = req.body.validUntil || null;
+
     const document = await documentService.uploadAndEncryptDocument({
       title,
       fileBuffer,
       fileName,
       mimeType,
       senderId: req.user._id,
-      recipientIds
+      recipientIds,
+      classification,
+      validFrom,
+      validUntil
     });
 
     const recipientCount = (document.recipientKeys && document.recipientKeys.length > 0)
@@ -60,6 +74,9 @@ async function uploadDocument(req, res, next) {
         fileSize: document.fileSize,
         fileHash: document.fileHash,
         mimeType: document.mimeType,
+        classification: document.classification,
+        validFrom: document.validFrom,
+        validUntil: document.validUntil,
         recipientCount,
         createdAt: document.createdAt
       }
