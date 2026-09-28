@@ -1,6 +1,9 @@
+'use strict';
+
 const crypto = require('node:crypto');
 const mongoose = require('mongoose');
 const FabricLedgerRecord = require('../models/FabricLedgerRecord');
+const DecryptionSession = require('../models/DecryptionSession');
 const Document = require('../models/Document');
 const User = require('../models/User');
 const fabricService = require('./fabricService');
@@ -15,21 +18,17 @@ const { ValidationError, NotFoundError } = require('../utils/errors');
 /**
  * Forensic Investigation and Attribution Service (HLD / LLD Section 25 & 26)
  *
- * Implements the 5-stage fail-closed forensic verification pipeline:
- * 1. Watermark Detection & Extraction from leaked file
- * 2. Fabric Immutable Ledger Query (Watermark / Event lookup)
- *    -> Handles "NOT FOUND" as a CRITICAL security alert
- * 3. Canonical Event Digest Recomputation
- * 4. ML-DSA-65 Digital Signature Verification on recipient public key
- *    -> Handles "SIGNATURE FAILURE" as a CRITICAL security alert
- * 5. Document Hash & Watermark Commitment Binding Verification
- * 6. Server-signed forensic report generation for non-repudiation
+ * Implements rigorous, tamper-resistant forensic verification:
+ * 1. Extraction from suspect document buffer
+ * 2. Immutable Ledger lookup
+ * 3. Canonical Event Digest & ML-DSA Signature Verification (Ledger Authenticity)
+ * 4. Document / Content Binding Verification (detects marker copying fraud)
+ * 5. Recomputation of cryptographic watermark commitment from authenticated session context
+ * 6. Digitally attested audit report signed by server authority
  */
 const forensicService = {
   /**
    * Extract forensic watermark from a suspect or leaked document buffer
-   * @param {Buffer} fileBuffer
-   * @returns {Promise<{ status: string, watermarkId: string|null, confidence: number, layersDetected: Array<string>, robustnessVerdict: string }>}
    */
   async extractWatermark(fileBuffer) {
     if (!Buffer.isBuffer(fileBuffer) || fileBuffer.length === 0) {
@@ -41,16 +40,17 @@ const forensicService = {
       return {
         status: extracted.status || (extracted.watermark_id ? 'SUCCESS' : 'NOT_FOUND'),
         watermarkId: extracted.watermark_id || null,
-        confidence: typeof extracted.confidence === 'number' ? extracted.confidence : (extracted.watermark_id ? 0.95 : 0.0),
+        confidence: extracted.confidence !== undefined ? extracted.confidence : null,
         layersDetected: extracted.layers_detected || ['FORENSIC_STREAM_MARKER'],
-        robustnessVerdict: extracted.robustness_verdict || (extracted.watermark_id ? 'STRONG_ATTRIBUTION' : 'INCONCLUSIVE')
+        robustnessVerdict: extracted.robustness_verdict || (extracted.watermark_id ? 'STRONG_ATTRIBUTION' : 'INCONCLUSIVE'),
+        extractionMedium: extracted.extraction_medium || 'DIGITAL_PDF'
       };
     } catch (err) {
       logger.warn('Watermark extraction exception:', { error: err.message });
       return {
         status: 'EXTRACTION_ERROR',
         watermarkId: null,
-        confidence: 0.0,
+        confidence: null,
         layersDetected: [],
         robustnessVerdict: 'INCONCLUSIVE',
         error: err.message
@@ -66,9 +66,10 @@ const forensicService = {
    * @param {string} [query.watermarkCommitment]
    * @param {string} [query.eventId]
    * @param {string} [query.documentHash]
+   * @param {Buffer} [query.suspectFileBuffer] - Raw buffer of leaked artifact for content binding check
    * @returns {Promise<Object>} ForensicVerificationResult
    */
-  async verifyForensicEvidence({ watermarkId, watermarkCommitment, eventId, documentHash }) {
+  async verifyForensicEvidence({ watermarkId, watermarkCommitment, eventId, documentHash, suspectFileBuffer = null }) {
     if (!watermarkId && !watermarkCommitment && !eventId) {
       throw new ValidationError('At least one of watermarkId, watermarkCommitment, or eventId is required for forensic verification');
     }
@@ -88,7 +89,7 @@ const forensicService = {
       ledgerRecord = await FabricLedgerRecord.findOne({ $or: queryOr }).lean();
     }
 
-    // ── CRITICAL EVENT: NOT FOUND ON IMMUTABLE LEDGER ────────────────────────
+    // ── CRITICAL ALERT: Record not found on immutable ledger ────────────────
     if (!ledgerRecord) {
       const queriedId = watermarkId || watermarkCommitment || eventId;
       logger.securityAudit('FORENSIC_EVENT_NOT_FOUND', {
@@ -101,11 +102,14 @@ const forensicService = {
 
       const notFoundResult = {
         status: 'NOT_FOUND',
+        attributionVerdict: 'UNVERIFIED_FORGERY_OR_UNTRACKED',
         watermarkId: watermarkId || null,
         eventId: eventId || null,
+        ledgerSignatureValid: false,
         signatureValid: false,
         documentHashValid: false,
         watermarkCommitmentValid: false,
+        evidenceBindingValid: false,
         digestValid: false,
         isCriticalAlert: true,
         alertLevel: 'CRITICAL',
@@ -113,13 +117,12 @@ const forensicService = {
         issues: [`No provenance record found on ledger matching query: ${queriedId}`],
         evidence: {
           queriedAt: new Date().toISOString(),
-          extractorVersion: '1.0.0',
+          extractorVersion: '2.0.0',
           watermarkAlgorithmVersion: 'NIST-PQC-FINGERPRINT-v1',
           ledgerQueried: true
         }
       };
 
-      // Attest report with server private authority signature
       const reportDigest = cryptoService.computeHash(JSON.stringify(notFoundResult));
       const serverSignature = cryptoService.signPayload(reportDigest, env.SERVER_PRIVATE_KEY);
 
@@ -167,7 +170,7 @@ const forensicService = {
       issues.push(`Canonical digest reconstruction error: ${err.message}`);
     }
 
-    // ── STAGE 3: ML-DSA-65 Recipient Signature Verification ─────────────────
+    // ── STAGE 3: ML-DSA-65 Recipient Signature Verification (Ledger Authenticity) ──
     let signatureValid = false;
     let recipientUser = null;
     try {
@@ -195,43 +198,114 @@ const forensicService = {
       issues.push(`ML-DSA signature verification exception: ${sigErr.message}`);
     }
 
-    // ── STAGE 4: Document Hash Binding ──────────────────────────────────────
-    let documentHashValid = true;
+    // ── STAGE 4: Document Hash & Source Document Binding ────────────────────
+    let documentHashValid = false; // Default to false (fail-closed if missing)
     let docRecord = null;
+
     try {
       if (mongoose.Types.ObjectId.isValid(ledgerRecord.documentId)) {
         docRecord = await Document.findById(ledgerRecord.documentId).exec();
       }
       if (!docRecord) {
-        // Try looking up by documentId string
         docRecord = await Document.findOne({ documentId: ledgerRecord.documentId }).exec();
       }
 
-      if (documentHash && documentHash !== ledgerRecord.documentHash) {
+      if (!docRecord) {
+        issues.push(`Original source document ${ledgerRecord.documentId} not found in system registry`);
         documentHashValid = false;
-        issues.push(`Queried documentHash (${documentHash}) does not match ledger documentHash (${ledgerRecord.documentHash})`);
-      }
+      } else {
+        if (docRecord.fileHash !== ledgerRecord.documentHash) {
+          documentHashValid = false;
+          issues.push(`Ledger documentHash (${ledgerRecord.documentHash}) does not match actual registered document fileHash (${docRecord.fileHash})`);
+        } else {
+          documentHashValid = true;
+        }
 
-      if (docRecord && docRecord.fileHash !== ledgerRecord.documentHash) {
-        documentHashValid = false;
-        issues.push(`Ledger documentHash does not match actual registered document fileHash`);
+        if (documentHash && documentHash !== ledgerRecord.documentHash) {
+          issues.push(`Client-supplied documentHash (${documentHash}) differs from authenticated ledger documentHash (${ledgerRecord.documentHash})`);
+        }
       }
     } catch (docErr) {
+      documentHashValid = false;
       issues.push(`Document binding lookup error: ${docErr.message}`);
     }
 
-    // ── STAGE 5: Watermark Commitment Validation ────────────────────────────
+    // ── STAGE 5: Watermark Commitment Recomputation from Session Context ────
     let watermarkCommitmentValid = false;
-    if (ledgerRecord.watermarkCommitment && ledgerRecord.watermarkCommitment.length === 64) {
-      watermarkCommitmentValid = true;
-    } else {
-      issues.push('Watermark commitment is missing or malformed');
+    let sessionRecord = null;
+
+    if (ledgerRecord.sessionId) {
+      sessionRecord = await DecryptionSession.findOne({ sessionId: ledgerRecord.sessionId }).exec();
     }
 
-    // ── STAGE 6: Assemble Comprehensive Attestation Report ─────────────────
-    const isVerified = digestValid && signatureValid && documentHashValid && watermarkCommitmentValid && issues.length === 0;
-    const isCriticalAlert = !isVerified;
-    const status = isVerified ? 'VERIFIED' : 'INVALID';
+    if (sessionRecord && docRecord) {
+      try {
+        const recomputed = fingerprintService.deriveFingerprint({
+          recipientId: sessionRecord.recipientId.toString(),
+          documentId: docRecord.documentId || docRecord._id.toString(),
+          documentHash: docRecord.fileHash,
+          sessionId: sessionRecord.sessionId,
+          sessionNonce: sessionRecord.sessionNonce
+        });
+
+        const matchesCommitment = recomputed.watermarkCommitment === ledgerRecord.watermarkCommitment;
+        const matchesWatermarkId = recomputed.watermarkId === ledgerRecord.watermarkId;
+
+        if (matchesCommitment && matchesWatermarkId) {
+          watermarkCommitmentValid = true;
+        } else {
+          watermarkCommitmentValid = false;
+          issues.push(`Cryptographic commitment derivation mismatch: stored commitment does not match recomputed session commitment`);
+        }
+      } catch (fpErr) {
+        watermarkCommitmentValid = false;
+        issues.push(`Failed to recompute watermark commitment: ${fpErr.message}`);
+      }
+    } else {
+      watermarkCommitmentValid = false;
+      issues.push('Cannot recompute watermark commitment: original session or document record is missing');
+    }
+
+    // ── STAGE 6: Content Binding & Marker-Copying Fraud Detection ────────────
+    let evidenceBindingValid = true;
+    let serverEvidenceHash = null;
+
+    if (suspectFileBuffer && Buffer.isBuffer(suspectFileBuffer) && suspectFileBuffer.length > 0) {
+      serverEvidenceHash = cryptoService.computeHash(suspectFileBuffer);
+
+      if (docRecord) {
+        // Compare structural layout to verify that the suspect artifact genuinely contains the original document content
+        const suspectStructuralFp = fingerprintService.computeStructuralFingerprint(suspectFileBuffer);
+        const originalStructuralFp = docRecord.structuralFingerprint;
+
+        if (originalStructuralFp && suspectStructuralFp !== originalStructuralFp) {
+          evidenceBindingValid = false;
+          issues.push('Marker copying fraud detected: suspect file contains valid watermark identifier but structural layout does not match original document');
+          logger.securityAudit('FORENSIC_MARKER_COPYING_DETECTED', {
+            watermarkId: ledgerRecord.watermarkId,
+            eventId: ledgerRecord.eventId,
+            originalDocId: docRecord.documentId
+          });
+        }
+      }
+    }
+
+    // ── STAGE 7: Final Attribution Verdict Determination ────────────────────
+    const ledgerIntegrityVerified = digestValid && signatureValid;
+    const attributionVerified = ledgerIntegrityVerified && documentHashValid && watermarkCommitmentValid && evidenceBindingValid && issues.length === 0;
+
+    let status;
+    if (attributionVerified) {
+      status = 'VERIFIED';
+    } else if (!ledgerIntegrityVerified) {
+      status = 'INVALID';
+    } else if (!docRecord || !sessionRecord) {
+      status = 'INCONCLUSIVE';
+    } else {
+      status = 'INVALID';
+    }
+
+    const isCriticalAlert = status !== 'VERIFIED';
 
     if (isCriticalAlert) {
       logger.securityAudit('FORENSIC_VERIFICATION_FAILURE', {
@@ -251,6 +325,7 @@ const forensicService = {
 
     const verificationResult = {
       status,
+      attributionVerdict: attributionVerified ? 'ATTRIBUTION_CONFIRMED' : (status === 'INCONCLUSIVE' ? 'INCONCLUSIVE' : 'ATTRIBUTION_REFUTED'),
       watermarkId: ledgerRecord.watermarkId,
       watermarkCommitment: ledgerRecord.watermarkCommitment,
       recipientId: ledgerRecord.recipientId,
@@ -282,17 +357,20 @@ const forensicService = {
       signingKeyId: ledgerRecord.signingKeyId,
       digestValid,
       signatureValid,
+      ledgerSignatureValid: signatureValid,
       documentHashValid,
       watermarkCommitmentValid,
-      recoveryConfidence: isVerified ? 0.99 : 0.0,
+      evidenceBindingValid,
+      serverEvidenceHash,
       isCriticalAlert,
-      alertLevel: isCriticalAlert ? 'CRITICAL' : 'NONE',
+      alertLevel: isCriticalAlert ? (status === 'INCONCLUSIVE' ? 'MEDIUM' : 'CRITICAL') : 'NONE',
       issues,
       evidence: {
         extractedAt: new Date().toISOString(),
-        extractorVersion: '1.0.0',
+        extractorVersion: '2.0.0',
         watermarkAlgorithmVersion: 'NIST-PQC-FINGERPRINT-v1',
-        cryptoStandard: 'NIST FIPS 204 (ML-DSA-65)'
+        cryptoStandard: 'NIST FIPS 204 (ML-DSA-65)',
+        limitations: 'Digital extraction validated on vector PDFs; optical photo/scan extraction requires physical testbed'
       }
     };
 

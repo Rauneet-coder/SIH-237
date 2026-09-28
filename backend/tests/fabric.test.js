@@ -42,6 +42,7 @@ describe('Phase 6: Hyperledger Fabric Network & Ledger Invariants', () => {
       email: 'alice@fabric.mod.gov.in',
       password: 'dummy_password',
       role: 'RECIPIENT',
+      clearance: 'TOP_SECRET',
       publicKey: dummyRsa.publicKey,
       mlKemPublicKey: userKeys.mlKemPublicKey,
       mlDsaPublicKey: userKeys.mlDsaPublicKey,

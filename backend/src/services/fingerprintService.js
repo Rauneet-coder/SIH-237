@@ -133,13 +133,13 @@ const fingerprintService = {
     const objMatches = rawStr.match(/\b\d+\s+\d+\s+obj\b/g);
     structuralTokens.push(`OBJECTS:${objMatches ? objMatches.length : 0}`);
 
-    // If PDF markers are absent, tokenize alphanumeric words/layout
-    if (structuralTokens.length <= 2) {
-      const normalizedWords = rawStr
-        .replace(/[^a-zA-Z0-9]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length > 3)
-        .slice(0, 100);
+    // 5. Tokenize text content and vocabulary layout to detect content differences
+    const normalizedWords = rawStr
+      .replace(/[^a-zA-Z0-9]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 3)
+      .slice(0, 100);
+    if (normalizedWords.length > 0) {
       structuralTokens.push(`WORDS:${normalizedWords.join(',')}`);
     }
 

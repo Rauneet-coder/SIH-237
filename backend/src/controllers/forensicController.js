@@ -94,10 +94,11 @@ async function investigateLeak(req, res, next) {
       });
     }
 
-    // 2. Verify
+    // 2. Verify with server-derived evidence hash and suspectFileBuffer
     const verification = await forensicService.verifyForensicEvidence({
       watermarkId: extraction.watermarkId,
-      documentHash: req.body.documentHash
+      documentHash: req.body.documentHash,
+      suspectFileBuffer: fileBuffer
     });
 
     const statusCode = verification.status === 'NOT_FOUND' ? 404 : 200;
