@@ -32,16 +32,27 @@ async function register(req, res, next) {
       });
     }
 
-    // 1. Hash password with bcrypt
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // SECURITY: Restrict self-registration to unprivileged roles only.
+    // Privileged roles (admin, investigator) require administrative approval.
+    const SELF_REGISTERABLE_ROLES = ['recipient', 'sender'];
+    const requestedRole = (role || 'recipient').toLowerCase();
+    const assignedRole = SELF_REGISTERABLE_ROLES.includes(requestedRole) ? requestedRole : 'recipient';
 
-    // 2. Generate RSA keypair for backwards-compatible cryptographic operations
-    const { publicKey, privateKey } = cryptoService.generateKeyPair(2048);
+    if (role && !SELF_REGISTERABLE_ROLES.includes(requestedRole)) {
+      logger.securityAudit('PRIVILEGED_ROLE_SELF_REGISTRATION_DENIED', {
+        requestedRole: role,
+        assignedRole,
+        username
+      });
+    }
 
-    // 3. Provision Post-Quantum Keys (ML-KEM-1024 & ML-DSA-65) inside Key Agent boundary
+    // 1. Hash password with bcrypt (cost factor 12 per SR-04)
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // 2. Provision Post-Quantum Keys (ML-KEM-1024 & ML-DSA-65) inside Key Agent boundary
     const pqcPublicKeys = await keyAgentClient.provisionRecipient(username);
 
-    // 4. Construct device list if device registration requested
+    // 3. Construct device list if device registration requested
     const initialDevices = [];
     if (deviceId && deviceFingerprint) {
       initialDevices.push({
@@ -52,13 +63,12 @@ async function register(req, res, next) {
       });
     }
 
-    // 5. Persist user with public keys only
+    // 4. Persist user with public keys only
     const user = new User({
       username,
       email: email.toLowerCase(),
       password: hashedPassword,
-      role: role || 'recipient',
-      publicKey,
+      role: assignedRole,
       mlKemPublicKey: pqcPublicKeys.mlKemPublicKey,
       mlDsaPublicKey: pqcPublicKeys.mlDsaPublicKey,
       keyStatus: 'ACTIVE',
@@ -97,14 +107,11 @@ async function register(req, res, next) {
         username: user.username,
         email: user.email,
         role: user.role,
-        publicKey: user.publicKey,
         mlKemPublicKey: user.mlKemPublicKey,
         mlDsaPublicKey: user.mlDsaPublicKey,
         keyStatus: user.keyStatus,
         createdAt: user.createdAt
-      },
-      // One-time legacy RSA private key export for backwards compatibility with tests
-      privateKey
+      }
     });
   } catch (error) {
     next(error);
@@ -303,6 +310,66 @@ async function revokeKey(req, res, next) {
   }
 }
 
+/**
+ * Admin-only: Update a user's role
+ * Required for controlled enrollment of privileged roles
+ */
+async function updateUserRole(req, res, next) {
+  try {
+    const { userId } = req.params;
+    const { role } = req.body;
+
+    const VALID_ROLES = ['recipient', 'sender', 'investigator', 'admin', 'auditor'];
+    if (!role || !VALID_ROLES.includes(role.toLowerCase())) {
+      throw new ValidationError(`Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`);
+    }
+
+    const user = await User.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundError('User');
+    }
+
+    const previousRole = user.role;
+    user.role = role.toLowerCase();
+    await user.save();
+
+    logger.securityAudit('USER_ROLE_UPDATED', {
+      adminId: req.user._id.toString(),
+      targetUserId: userId,
+      previousRole,
+      newRole: role.toLowerCase()
+    });
+
+    return res.json({
+      success: true,
+      message: `User ${user.username} role updated from ${previousRole} to ${user.role}`,
+      user: {
+        id: user._id,
+        username: user.username,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Admin-only: List all registered users
+ */
+async function listUsers(req, res, next) {
+  try {
+    const users = await User.find()
+      .select('username email role keyStatus isActive createdAt')
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return res.json({ success: true, users });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -310,5 +377,7 @@ module.exports = {
   getRecipients,
   registerDevice,
   getDevices,
-  revokeKey
+  revokeKey,
+  updateUserRole,
+  listUsers
 };

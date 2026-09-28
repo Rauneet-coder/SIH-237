@@ -81,6 +81,35 @@ const decryptionSessionService = {
       throw new NotFoundError('DecryptionSession');
     }
 
+    // SECURITY: Verify session ownership FIRST — before any early returns
+    if (session.recipientId.toString() !== recipientId.toString()) {
+      logger.securityAudit('SESSION_OWNERSHIP_VIOLATION', {
+        sessionId,
+        sessionOwner: session.recipientId.toString(),
+        requestingUser: recipientId.toString()
+      });
+      throw new AuthorizationError('Unauthorized: session belongs to a different recipient');
+    }
+
+    // SECURITY: Verify device matches the session's registered device
+    if (session.deviceId !== deviceId) {
+      logger.securityAudit('SESSION_DEVICE_MISMATCH', {
+        sessionId,
+        expectedDevice: session.deviceId,
+        providedDevice: deviceId
+      });
+      throw new AuthorizationError('Device mismatch: session was created for a different device');
+    }
+
+    // Check expiry before any processing
+    if (new Date() > session.expiresAt) {
+      session.status = 'FAILED';
+      session.failureReason = 'Session expired';
+      await session.save();
+      throw new FailClosedError('Decryption session expired');
+    }
+
+    // Check for already-completed or failed states (AFTER ownership/device checks)
     if (session.status === 'RELEASED') {
       return { session, status: 'ALREADY_RELEASED' };
     }
@@ -89,11 +118,8 @@ const decryptionSessionService = {
       throw new FailClosedError(session.failureReason || 'Session previously failed');
     }
 
-    if (new Date() > session.expiresAt) {
-      session.status = 'FAILED';
-      session.failureReason = 'Session expired';
-      await session.save();
-      throw new FailClosedError('Decryption session expired');
+    if (session.status === 'REVOKED') {
+      throw new FailClosedError('Session has been revoked');
     }
 
     let rawDek = null;

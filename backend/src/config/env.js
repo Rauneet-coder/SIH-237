@@ -43,6 +43,10 @@ const env = {
   FABRIC_GATEWAY_PEER: process.env.FABRIC_GATEWAY_PEER || 'peer0.org1.example.com',
   FABRIC_MSP_ID: process.env.FABRIC_MSP_ID || 'Org1MSP',
 
+  // Legacy decrypt endpoint (SECURITY: disabled by default in secure mode)
+  // Set to 'true' only for backward-compatible testing environments
+  LEGACY_DECRYPT_ENABLED: process.env.LEGACY_DECRYPT_ENABLED === 'true',
+
   // Document Storage Vault
   ENCRYPTED_STORAGE_DIR: process.env.ENCRYPTED_STORAGE_DIR || './storage/encrypted'
 };

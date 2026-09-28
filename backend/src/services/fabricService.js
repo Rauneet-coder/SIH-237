@@ -233,12 +233,58 @@ class FabricService {
       throw new Error(`CORRUPTED_RECORD: missing critical cryptographic fields in event ${eventId}`);
     }
 
+    const issues = [];
+
+    // 1. Reconstruct canonical event and verify digest
+    const canonicalEventService = require('./canonicalEventService');
+    const reconstructedEvent = canonicalEventService.createDecryptionEvent({
+      eventId: record.eventId.replace('evt_', 'EVT-'), // Normalize ID format
+      documentId: record.documentId,
+      documentHash: record.documentHash,
+      recipientId: record.recipientId,
+      sessionId: record.sessionId,
+      deviceId: record.deviceId || '',
+      watermarkId: record.watermarkId,
+      watermarkCommitment: record.watermarkCommitment,
+      signingKeyId: record.signingKeyId,
+      timestamp: record.timestamp
+    });
+
+    const { eventDigest: recomputedDigest } = canonicalEventService.computeEventDigest(reconstructedEvent);
+
+    const digestValid = recomputedDigest === record.eventDigest;
+    if (!digestValid) {
+      issues.push(`Event digest mismatch: stored ${record.eventDigest}, computed ${recomputedDigest}`);
+    }
+
+    // 2. Verify ML-DSA signature if recipient public key is available
+    let signatureValid = false;
+    try {
+      const User = require('../models/User');
+      const pqcService = require('./pqcService');
+      const recipient = await User.findById(record.recipientId).exec();
+      if (recipient && recipient.mlDsaPublicKey) {
+        const digestBuf = Buffer.from(record.eventDigest, 'hex');
+        signatureValid = await pqcService.verify(record.signature, digestBuf, recipient.mlDsaPublicKey);
+        if (!signatureValid) {
+          issues.push('ML-DSA signature verification failed');
+        }
+      } else {
+        issues.push('Recipient ML-DSA public key not available for verification');
+      }
+    } catch (verifyErr) {
+      issues.push(`Signature verification error: ${verifyErr.message}`);
+    }
+
     return {
-      verified: true,
+      verified: digestValid && signatureValid && issues.length === 0,
       eventId: record.eventId,
       txId: record.txId,
       status: record.status,
       timestamp: record.timestamp,
+      digestValid,
+      signatureValid,
+      issues,
       record
     };
   }
