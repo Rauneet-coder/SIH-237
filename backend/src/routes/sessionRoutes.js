@@ -42,4 +42,11 @@ router.get(
   sessionController.getControlledDocument
 );
 
+// Close / Revoke session (Viewer Lock action)
+router.post(
+  '/:sessionId/close',
+  authenticate,
+  sessionController.closeSession
+);
+
 module.exports = router;

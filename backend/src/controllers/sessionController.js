@@ -111,7 +111,8 @@ async function getSessionStatus(req, res, next) {
 async function getControlledDocument(req, res, next) {
   try {
     const { sessionId } = req.params;
-    const buffer = await decryptionSessionService.getSessionDocument(sessionId, req.user._id);
+    const deviceId = req.headers['x-device-id'] || req.query.deviceId;
+    const buffer = await decryptionSessionService.getSessionDocument(sessionId, req.user._id, deviceId);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline; filename=forensic_view.pdf');
@@ -119,6 +120,19 @@ async function getControlledDocument(req, res, next) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 
     return res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Close / Revoke a decryption session server-side (Viewer Lock action)
+ */
+async function closeSession(req, res, next) {
+  try {
+    const { sessionId } = req.params;
+    const result = await decryptionSessionService.closeSession(sessionId, req.user._id);
+    return res.json(result);
   } catch (error) {
     next(error);
   }
@@ -142,5 +156,6 @@ module.exports = {
   prepareSession,
   getSessionStatus,
   getControlledDocument,
+  closeSession,
   getSessionMetadata
 };

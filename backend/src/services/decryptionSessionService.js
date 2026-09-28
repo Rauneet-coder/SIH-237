@@ -1,3 +1,5 @@
+'use strict';
+
 const crypto = require('node:crypto');
 const DecryptionSession = require('../models/DecryptionSession');
 const Document = require('../models/Document');
@@ -20,6 +22,9 @@ const logger = require('../utils/logger');
 
 // Ephemeral volatile buffer store for active, released sessions
 const sessionBufferCache = new Map();
+
+// In-flight preparation mutex: sessionId -> Promise
+const activePreparations = new Map();
 
 const decryptionSessionService = {
   /**
@@ -119,246 +124,281 @@ const decryptionSessionService = {
 
   /**
    * Execute Fail-Closed Decryption, Fingerprinting, Signing, and Commitment Pipeline
+   * Safe against concurrent invocations using atomic session locking.
    */
   async prepareSession({ sessionId, recipientId, deviceId }) {
-    const session = await DecryptionSession.findOne({ sessionId }).exec();
-    if (!session) {
-      throw new NotFoundError('DecryptionSession');
+    if (activePreparations.has(sessionId)) {
+      return await activePreparations.get(sessionId);
     }
 
-    // SECURITY: Verify session ownership FIRST — before any early returns
-    if (session.recipientId.toString() !== recipientId.toString()) {
-      logger.securityAudit('SESSION_OWNERSHIP_VIOLATION', {
-        sessionId,
-        sessionOwner: session.recipientId.toString(),
-        requestingUser: recipientId.toString()
-      });
-      throw new AuthorizationError('Unauthorized: session belongs to a different recipient');
-    }
-
-    // SECURITY: Verify device matches the session's registered device
-    if (session.deviceId !== deviceId) {
-      logger.securityAudit('SESSION_DEVICE_MISMATCH', {
-        sessionId,
-        expectedDevice: session.deviceId,
-        providedDevice: deviceId
-      });
-      throw new AuthorizationError('Device mismatch: session was created for a different device');
-    }
-
-    // Check expiry before any processing
-    if (new Date() > session.expiresAt) {
-      session.status = 'FAILED';
-      session.failureReason = 'Session expired';
-      await session.save();
-      throw new FailClosedError('Decryption session expired');
-    }
-
-    // Check for already-completed or failed states (AFTER ownership/device checks)
-    if (session.status === 'RELEASED') {
-      return { session, status: 'ALREADY_RELEASED' };
-    }
-
-    if (session.status === 'FAILED') {
-      throw new FailClosedError(session.failureReason || 'Session previously failed');
-    }
-
-    if (session.status === 'REVOKED') {
-      throw new FailClosedError('Session has been revoked');
-    }
-
-    let rawDek = null;
-    let decryptedPlaintext = null;
-    let watermarkedBuffer = null;
-
-    try {
-      // ── STAGE 1: Authorization & Device Verification ────────────────────────
-      const user = await User.findById(recipientId).exec();
-      if (!user || user.keyStatus !== 'ACTIVE') {
-        throw new AuthorizationError('Recipient account or cryptographic keys are revoked');
+    const prepPromise = (async () => {
+      const session = await DecryptionSession.findOne({ sessionId }).exec();
+      if (!session) {
+        throw new NotFoundError('DecryptionSession');
       }
 
-      const device = await Device.findOne({ userId: recipientId, deviceId }).exec();
-      if (device && device.status === 'REVOKED') {
-        throw new AuthorizationError(`Device ${deviceId} is revoked`);
+      // SECURITY: Verify session ownership FIRST — before any early returns
+      if (session.recipientId.toString() !== recipientId.toString()) {
+        logger.securityAudit('SESSION_OWNERSHIP_VIOLATION', {
+          sessionId,
+          sessionOwner: session.recipientId.toString(),
+          requestingUser: recipientId.toString()
+        });
+        throw new AuthorizationError('Unauthorized: session belongs to a different recipient');
       }
 
-      session.status = 'AUTHORIZED';
-      await session.save();
-
-      // ── STAGE 2: Post-Quantum ML-KEM Decapsulation & AES Decryption ─────────
-      const document = await Document.findById(session.documentId).exec();
-      const envelope = (document.keyEnvelopes || []).find(
-        (e) => e.recipientId.toString() === recipientId.toString()
-      );
-
-      if (!envelope) {
-        throw new AuthorizationError('No ML-KEM key envelope found for recipient');
+      // SECURITY: Verify device matches the session's registered device
+      if (session.deviceId !== deviceId) {
+        logger.securityAudit('SESSION_DEVICE_MISMATCH', {
+          sessionId,
+          expectedDevice: session.deviceId,
+          providedDevice: deviceId
+        });
+        throw new AuthorizationError('Device mismatch: session was created for a different device');
       }
 
-      // Recover DEK via Key Agent
-      rawDek = await keyEnvelopeService.unwrapEnvelope({
-        envelope,
-        recipientUsername: user.username,
-        recipientId: recipientId.toString(),
-        documentId: document.documentId || document._id.toString(),
-        documentHash: document.fileHash
-      });
-
-      // Decrypt document with AES-256-GCM (load from file vault or fallback to database)
-      const ciphertextBuffer = fileVaultService.loadCiphertext(document);
-      decryptedPlaintext = cryptoService.decryptDocument(
-        ciphertextBuffer,
-        rawDek,
-        document.iv,
-        document.authTag
-      );
-
-      // Verify Document Hash
-      const contentHash = cryptoService.computeHash(decryptedPlaintext);
-      if (contentHash !== document.fileHash) {
-        throw new FailClosedError('Document plaintext integrity hash mismatch');
+      // Check expiry before any processing
+      if (new Date() > session.expiresAt) {
+        session.status = 'FAILED';
+        session.failureReason = 'Session expired';
+        await session.save();
+        throw new FailClosedError('Decryption session expired');
       }
 
-      // Zeroize DEK immediately
-      rawDek.fill(0);
-      rawDek = null;
+      // Check for already-completed or failed states (AFTER ownership/device checks)
+      if (session.status === 'RELEASED') {
+        return { session, status: 'ALREADY_RELEASED' };
+      }
 
-      session.status = 'DECRYPTED';
-      await session.save();
+      if (session.status === 'FAILED') {
+        throw new FailClosedError(session.failureReason || 'Session previously failed');
+      }
 
-      // ── STAGE 3: Forensic Fingerprinting & Watermark Embedding ───────────────
-      const { watermarkId, watermarkCommitment } = fingerprintService.deriveFingerprint({
-        recipientId: recipientId.toString(),
-        documentId: document.documentId || document._id.toString(),
-        documentHash: document.fileHash,
-        sessionId: session.sessionId,
-        sessionNonce: session.sessionNonce
-      });
+      if (session.status === 'REVOKED') {
+        throw new FailClosedError('Session has been revoked');
+      }
 
-      session.watermarkId = watermarkId;
-      session.watermarkCommitment = watermarkCommitment;
+      let rawDek = null;
+      let decryptedPlaintext = null;
+      let watermarkedBuffer = null;
 
-      watermarkedBuffer = await fingerprintService.embedWatermark(
-        decryptedPlaintext,
-        watermarkId,
-        session.sessionId
-      );
+      try {
+        // ── STAGE 1: Authorization & Device Verification ────────────────────────
+        const user = await User.findById(recipientId).exec();
+        if (!user || user.keyStatus !== 'ACTIVE' || !user.isActive) {
+          throw new AuthorizationError('Recipient account or cryptographic keys are revoked');
+        }
 
-      session.status = 'WATERMARKED';
-      await session.save();
+        const device = await Device.findOne({ userId: recipientId, deviceId }).exec();
+        if (!device || device.status !== 'ACTIVE') {
+          throw new AuthorizationError(`Device ${deviceId} is not active (status: ${device?.status || 'NOT_FOUND'})`);
+        }
 
-      // ── STAGE 4: Deterministic Canonical Event & ML-DSA Signing ─────────────
-      const canonicalEventId = `EVT-${session.sessionId.replace('SES-', '')}`;
-      const canonicalEvent = canonicalEventService.createDecryptionEvent({
-        eventId: canonicalEventId,
-        documentId: document.documentId || document._id.toString(),
-        documentHash: document.fileHash,
-        recipientId: recipientId.toString(),
-        sessionId: session.sessionId,
-        deviceId: session.deviceId,
-        watermarkId,
-        watermarkCommitment,
-        signingKeyId: user.keyVersion ? `ML-DSA-65-V${user.keyVersion}` : 'ML-DSA-65-V1'
-      });
+        session.status = 'AUTHORIZED';
+        await session.save();
 
-      const { eventDigest, signature } = await canonicalEventService.signAndVerifyEvent({
-        canonicalEvent,
-        recipientUsername: user.username,
-        recipientPublicKey: user.mlDsaPublicKey
-      });
+        // ── STAGE 2: Post-Quantum ML-KEM Decapsulation & AES Decryption ─────────
+        const document = await Document.findById(session.documentId).exec();
+        if (!document) {
+          throw new NotFoundError('Associated document not found');
+        }
 
-      session.canonicalEvent = canonicalEvent;
-      session.eventDigest = eventDigest;
-      session.signature = signature;
-      session.signingKeyId = canonicalEvent.signingKeyId;
-      session.status = 'SIGNED';
-      await session.save();
+        const envelope = (document.keyEnvelopes || []).find(
+          (e) => e.recipientId.toString() === recipientId.toString()
+        );
 
-      // ── STAGE 5: Provenance Ledger Commitment (Hyperledger Fabric) ────────────
-      const fabricRecord = await fabricService.recordDecryptionEvent({
-        eventId: `evt_${session.sessionId}`,
-        eventDigest,
-        documentId: document.documentId || document._id.toString(),
-        documentHash: document.fileHash,
-        recipientId: recipientId.toString(),
-        sessionId: session.sessionId,
-        deviceId: session.deviceId,
-        watermarkId,
-        watermarkCommitment,
-        signingKeyId: canonicalEvent.signingKeyId,
-        signature,
-        timestamp: canonicalEvent.timestamp
-      });
+        if (!envelope) {
+          throw new AuthorizationError('No ML-KEM key envelope found for recipient');
+        }
 
-      // Dual-logged to local hash-chained provenance log
-      const logEntry = await provenanceService.logProvenanceEvent({
-        docId: document._id,
-        recipientId,
-        action: 'DECRYPT_SUCCESS',
-        status: 'SUCCESS',
-        details: {
+        // Recover DEK via Key Agent
+        rawDek = await keyEnvelopeService.unwrapEnvelope({
+          envelope,
+          recipientUsername: user.username,
+          recipientId: recipientId.toString(),
+          documentId: document.documentId || document._id.toString(),
+          documentHash: document.fileHash
+        });
+
+        // Decrypt document with AES-256-GCM (load from file vault or fallback to database)
+        const ciphertextBuffer = fileVaultService.loadCiphertext(document);
+        decryptedPlaintext = cryptoService.decryptDocument(
+          ciphertextBuffer,
+          rawDek,
+          document.iv,
+          document.authTag
+        );
+
+        // Verify Document Hash
+        const contentHash = cryptoService.computeHash(decryptedPlaintext);
+        if (contentHash !== document.fileHash) {
+          throw new FailClosedError('Document plaintext integrity hash mismatch');
+        }
+
+        // Zeroize DEK immediately
+        rawDek.fill(0);
+        rawDek = null;
+
+        session.status = 'DECRYPTED';
+        await session.save();
+
+        // ── STAGE 3: Forensic Fingerprinting & Watermark Embedding ───────────────
+        const { watermarkId, watermarkCommitment } = fingerprintService.deriveFingerprint({
+          recipientId: recipientId.toString(),
+          documentId: document.documentId || document._id.toString(),
+          documentHash: document.fileHash,
           sessionId: session.sessionId,
+          sessionNonce: session.sessionNonce
+        });
+
+        session.watermarkId = watermarkId;
+        session.watermarkCommitment = watermarkCommitment;
+
+        // Fail-Closed: if watermark embedding fails in secure mode, release is aborted
+        watermarkedBuffer = await fingerprintService.embedWatermark(
+          decryptedPlaintext,
+          watermarkId,
+          session.sessionId
+        );
+
+        session.status = 'WATERMARKED';
+        await session.save();
+
+        // ── STAGE 4: Deterministic Canonical Event & ML-DSA Signing ─────────────
+        const canonicalEventId = `EVT-${session.sessionId.replace('SES-', '')}`;
+        const canonicalEvent = canonicalEventService.createDecryptionEvent({
+          eventId: canonicalEventId,
+          documentId: document.documentId || document._id.toString(),
+          documentHash: document.fileHash,
+          recipientId: recipientId.toString(),
+          sessionId: session.sessionId,
+          deviceId: session.deviceId,
+          watermarkId,
+          watermarkCommitment,
+          signingKeyId: user.keyVersion ? `ML-DSA-65-V${user.keyVersion}` : 'ML-DSA-65-V1'
+        });
+
+        const { eventDigest, signature } = await canonicalEventService.signAndVerifyEvent({
+          canonicalEvent,
+          recipientUsername: user.username,
+          recipientPublicKey: user.mlDsaPublicKey
+        });
+
+        session.canonicalEvent = canonicalEvent;
+        session.eventDigest = eventDigest;
+        session.signature = signature;
+        session.signingKeyId = canonicalEvent.signingKeyId;
+        session.status = 'SIGNED';
+        await session.save();
+
+        // ── STAGE 5: Provenance Ledger Commitment (Hyperledger Fabric) ────────────
+        const fabricRecord = await fabricService.recordDecryptionEvent({
+          eventId: `evt_${session.sessionId}`,
+          eventDigest,
+          documentId: document.documentId || document._id.toString(),
+          documentHash: document.fileHash,
+          recipientId: recipientId.toString(),
+          sessionId: session.sessionId,
+          deviceId: session.deviceId,
+          watermarkId,
+          watermarkCommitment,
+          signingKeyId: canonicalEvent.signingKeyId,
+          signature,
+          timestamp: canonicalEvent.timestamp
+        });
+
+        // Dual-logged to local hash-chained provenance log
+        await provenanceService.logProvenanceEvent({
+          docId: document._id,
+          recipientId,
+          action: 'DECRYPT_SUCCESS',
+          status: 'SUCCESS',
+          details: {
+            sessionId: session.sessionId,
+            watermarkId,
+            watermarkCommitment,
+            eventDigest,
+            fabricTxId: fabricRecord.txId,
+            mlDsaSignaturePrefix: signature.slice(0, 24)
+          }
+        });
+
+        session.ledgerTxId = fabricRecord.txId;
+        session.status = 'COMMITTED';
+        await session.save();
+
+        // ── FINAL RELEASE GATE ───────────────────────────────────────────────────
+        session.status = 'RELEASED';
+        await session.save();
+
+        // Cache watermarked buffer for controlled viewer access
+        sessionBufferCache.set(session.sessionId, {
+          buffer: watermarkedBuffer,
+          expiresAt: session.expiresAt
+        });
+
+        logger.securityAudit('FAIL_CLOSED_GATE_PASSED_RELEASED', {
+          sessionId: session.sessionId,
+          watermarkId,
+          recipientId: recipientId.toString()
+        });
+
+        return {
+          session,
+          status: 'RELEASED',
           watermarkId,
           watermarkCommitment,
           eventDigest,
-          fabricTxId: fabricRecord.txId,
-          mlDsaSignaturePrefix: signature.slice(0, 24)
+          signature
+        };
+      } catch (err) {
+        // ── FAIL-CLOSED TRIGGER ──────────────────────────────────────────────────
+        if (rawDek) rawDek.fill(0);
+        session.status = 'FAILED';
+        session.failureReason = err.message;
+        await session.save();
+
+        // Evict any cached buffers
+        sessionBufferCache.delete(session.sessionId);
+
+        // Record failed attempt in provenance ledger
+        try {
+          await provenanceService.logProvenanceEvent({
+            docId: session.documentId,
+            recipientId,
+            action: 'DECRYPT_FAILURE',
+            status: 'FAILURE',
+            details: {
+              sessionId: session.sessionId,
+              failureReason: err.message
+            }
+          });
+        } catch {
+          // Best-effort audit logging
         }
-      });
 
-      session.ledgerTxId = fabricRecord.txId;
-      session.status = 'COMMITTED';
-      await session.save();
+        logger.error('FAIL-CLOSED TRIGGERED: Decryption release denied', {
+          sessionId: session.sessionId,
+          error: err.message
+        });
 
-      // ── FINAL RELEASE GATE ───────────────────────────────────────────────────
-      // All prerequisites passed; transition to RELEASED
-      session.status = 'RELEASED';
-      await session.save();
+        throw new FailClosedError(err.message);
+      }
+    })();
 
-      // Cache watermarked buffer for controlled viewer access
-      sessionBufferCache.set(session.sessionId, {
-        buffer: watermarkedBuffer,
-        expiresAt: session.expiresAt
-      });
-
-      logger.securityAudit('FAIL_CLOSED_GATE_PASSED_RELEASED', {
-        sessionId: session.sessionId,
-        watermarkId,
-        recipientId: recipientId.toString()
-      });
-
-      return {
-        session,
-        status: 'RELEASED',
-        watermarkId,
-        watermarkCommitment,
-        eventDigest,
-        signature
-      };
-    } catch (err) {
-      // ── FAIL-CLOSED TRIGGER ──────────────────────────────────────────────────
-      if (rawDek) rawDek.fill(0);
-      session.status = 'FAILED';
-      session.failureReason = err.message;
-      await session.save();
-
-      // Evict any cached buffers
-      sessionBufferCache.delete(session.sessionId);
-
-      logger.error('FAIL-CLOSED TRIGGERED: Decryption release denied', {
-        sessionId: session.sessionId,
-        error: err.message
-      });
-
-      throw new FailClosedError(err.message);
+    activePreparations.set(sessionId, prepPromise);
+    try {
+      return await prepPromise;
+    } finally {
+      activePreparations.delete(sessionId);
     }
   },
 
   /**
-   * Retrieve watermarked buffer for an active, RELEASED session only
+   * Retrieve watermarked buffer for an active, RELEASED session only.
+   * Strictly enforces exact device matching and rechecks active key/device status.
    */
-  async getSessionDocument(sessionId, recipientId) {
+  async getSessionDocument(sessionId, recipientId, deviceId = null) {
     const session = await DecryptionSession.findOne({ sessionId }).exec();
     if (!session) {
       throw new NotFoundError('DecryptionSession');
@@ -369,9 +409,54 @@ const decryptionSessionService = {
     }
 
     if (session.recipientId.toString() !== recipientId.toString()) {
-      throw new AuthorizationError('Unauthorized session access');
+      throw new AuthorizationError('Unauthorized session access: recipient mismatch');
     }
 
+    // Verify exact device matching if deviceId provided, or enforce device presence
+    if (deviceId && session.deviceId !== deviceId) {
+      logger.securityAudit('RENDER_DEVICE_MISMATCH', {
+        sessionId,
+        sessionDevice: session.deviceId,
+        requestDevice: deviceId,
+        recipientId: recipientId.toString()
+      });
+      throw new AuthorizationError('Device mismatch: document release is bound to original session device');
+    }
+
+    // Recheck current identity and key revocation
+    const user = await User.findById(recipientId).exec();
+    if (!user || user.keyStatus !== 'ACTIVE' || !user.isActive) {
+      session.status = 'REVOKED';
+      session.failureReason = 'Recipient account or cryptographic keys have been revoked';
+      await session.save();
+      sessionBufferCache.delete(sessionId);
+      throw new FailClosedError('Cryptographic keys for this recipient have been revoked');
+    }
+
+    // Recheck current device status
+    const effectiveDeviceId = deviceId || session.deviceId;
+    const device = await Device.findOne({ userId: recipientId, deviceId: effectiveDeviceId }).exec();
+    if (!device || device.status !== 'ACTIVE') {
+      session.status = 'REVOKED';
+      session.failureReason = `Device ${effectiveDeviceId} is no longer active (current: ${device?.status || 'NOT_FOUND'})`;
+      await session.save();
+      sessionBufferCache.delete(sessionId);
+      throw new FailClosedError(`Device ${effectiveDeviceId} is not active or has been revoked`);
+    }
+
+    // Recheck temporal access window
+    const document = await Document.findById(session.documentId).exec();
+    if (document) {
+      const now = new Date();
+      if (document.validFrom && now < document.validFrom) {
+        throw new FailClosedError('Document access window is not yet active');
+      }
+      if (document.validUntil && now > document.validUntil) {
+        throw new FailClosedError('Document access window has expired');
+      }
+    }
+
+    // Recheck session expiry
     if (new Date() > session.expiresAt) {
       session.status = 'FAILED';
       session.failureReason = 'Session expired';
@@ -386,6 +471,43 @@ const decryptionSessionService = {
     }
 
     return cached.buffer;
+  },
+
+  /**
+   * Close / Revoke a decryption session server-side (Viewer Lock action)
+   */
+  async closeSession(sessionId, recipientId) {
+    const session = await DecryptionSession.findOne({ sessionId }).exec();
+    if (!session) {
+      throw new NotFoundError('DecryptionSession');
+    }
+
+    const isOwner = session.recipientId.toString() === recipientId.toString();
+    const user = await User.findById(recipientId).exec();
+    const isAdmin = user && user.role.toUpperCase() === 'ADMIN';
+
+    if (!isOwner && !isAdmin) {
+      throw new AuthorizationError('Unauthorized: only session owner or admin can close session');
+    }
+
+    session.status = 'REVOKED';
+    session.failureReason = 'Session closed by user or viewer lock';
+    await session.save();
+
+    // Securely evict volatile render buffer from memory
+    sessionBufferCache.delete(sessionId);
+
+    logger.securityAudit('SESSION_CLOSED', {
+      sessionId,
+      closedBy: recipientId.toString()
+    });
+
+    return {
+      success: true,
+      sessionId,
+      status: 'REVOKED',
+      message: 'Decryption session closed and memory wiped'
+    };
   },
 
   /**

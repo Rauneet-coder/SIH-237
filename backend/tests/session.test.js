@@ -75,6 +75,7 @@ describe('Phase 4 & 5: Forensic Fingerprinting, Canonical Events & Fail-Closed S
       email: 'colonel@mod.gov.in',
       password: hashedPassword,
       role: 'RECIPIENT',
+      clearance: 'TOP_SECRET',
       publicKey: dummyRsa.publicKey,
       mlKemPublicKey: recipientKeys.mlKemPublicKey,
       mlDsaPublicKey: recipientKeys.mlDsaPublicKey,
@@ -233,7 +234,8 @@ describe('Phase 4 & 5: Forensic Fingerprinting, Canonical Events & Fail-Closed S
     it('should release watermarked document stream only when session is RELEASED', async () => {
       const res = await fetch(`${baseUrl}/api/sessions/${activeSessionId}/render`, {
         headers: {
-          Authorization: `Bearer ${recipientToken}`
+          Authorization: `Bearer ${recipientToken}`,
+          'x-device-id': 'DEV-COLONEL-SECURE'
         }
       });
 
@@ -274,7 +276,8 @@ describe('Phase 4 & 5: Forensic Fingerprinting, Canonical Events & Fail-Closed S
 
       const res = await fetch(`${baseUrl}/api/sessions/${failedSession.sessionId}/render`, {
         headers: {
-          Authorization: `Bearer ${recipientToken}`
+          Authorization: `Bearer ${recipientToken}`,
+          'x-device-id': 'DEV-COLONEL-SECURE'
         }
       });
 
