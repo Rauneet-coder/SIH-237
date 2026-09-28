@@ -375,6 +375,104 @@ async function listUsers(req, res, next) {
   }
 }
 
+// Active challenges map: deviceId -> { challenge, userId, expiresAt }
+const deviceChallenges = new Map();
+
+/**
+ * Generate a device challenge nonce for possession verification (HLD 3.6)
+ */
+async function generateDeviceChallenge(req, res, next) {
+  try {
+    const { deviceId } = req.body;
+    if (!deviceId) {
+      throw new ValidationError('deviceId is required');
+    }
+    const device = await Device.findOne({ userId: req.user._id, deviceId, status: 'ACTIVE' }).exec();
+    if (!device) {
+      throw new AuthorizationError('Device is not registered or active');
+    }
+
+    const challenge = crypto.randomBytes(32).toString('hex');
+    deviceChallenges.set(deviceId, {
+      challenge,
+      userId: req.user._id.toString(),
+      expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
+    });
+
+    return res.json({
+      success: true,
+      deviceId,
+      challenge,
+      expiresInSeconds: 300
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Verify cryptographic device challenge response
+ */
+async function verifyDeviceChallenge(req, res, next) {
+  try {
+    const { deviceId, response } = req.body;
+    if (!deviceId || !response) {
+      throw new ValidationError('deviceId and response are required');
+    }
+
+    const record = deviceChallenges.get(deviceId);
+    if (!record || Date.now() > record.expiresAt) {
+      deviceChallenges.delete(deviceId);
+      throw new AuthorizationError('Challenge expired or not found. Request a new challenge.');
+    }
+
+    const device = await Device.findOne({ userId: req.user._id, deviceId }).exec();
+    if (!device) {
+      throw new AuthorizationError('Device not found');
+    }
+
+    // Expected response: HMAC-SHA256(challenge, deviceFingerprint)
+    const expectedResponse = crypto
+      .createHmac('sha256', device.deviceFingerprint)
+      .update(record.challenge)
+      .digest('hex');
+
+    const isValid =
+      response.length === expectedResponse.length &&
+      crypto.timingSafeEqual(
+        Buffer.from(response, 'hex'),
+        Buffer.from(expectedResponse, 'hex')
+      );
+
+    deviceChallenges.delete(deviceId);
+
+    if (!isValid) {
+      logger.securityAudit('DEVICE_CHALLENGE_FAILED', {
+        deviceId,
+        userId: req.user._id.toString()
+      });
+      throw new AuthorizationError('Device challenge response verification failed');
+    }
+
+    device.lastSeenAt = new Date();
+    await device.save();
+
+    logger.securityAudit('DEVICE_CHALLENGE_VERIFIED', {
+      deviceId,
+      userId: req.user._id.toString()
+    });
+
+    return res.json({
+      success: true,
+      verified: true,
+      deviceId,
+      verifiedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -382,6 +480,8 @@ module.exports = {
   getRecipients,
   registerDevice,
   getDevices,
+  generateDeviceChallenge,
+  verifyDeviceChallenge,
   revokeKey,
   updateUserRole,
   listUsers

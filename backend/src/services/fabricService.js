@@ -219,10 +219,33 @@ class FabricService {
   /**
    * Cryptographically verifies event integrity on the ledger
    * @param {string} eventId
-   * @returns {Promise<{ verified: boolean, record: Object }>}
+   * @returns {Promise<{ verified: boolean, status: string, isCriticalAlert: boolean, record: Object }>}
    */
   async verifyEventIntegrity(eventId) {
-    const record = await this.getEvent(eventId);
+    let record;
+    try {
+      record = await this.getEvent(eventId);
+    } catch (err) {
+      if (err.message && err.message.startsWith('EVENT_NOT_FOUND')) {
+        logger.securityAudit('FABRIC_EVENT_VERIFY_NOT_FOUND', {
+          eventId,
+          alert: 'CRITICAL',
+          severity: 'HIGH'
+        });
+        return {
+          verified: false,
+          status: 'NOT_FOUND',
+          eventId,
+          isCriticalAlert: true,
+          alertLevel: 'CRITICAL',
+          digestValid: false,
+          signatureValid: false,
+          issues: [`EVENT_NOT_FOUND: provenance event ${eventId} not found on ledger`],
+          record: null
+        };
+      }
+      throw err;
+    }
 
     if (
       !record.eventDigest ||
@@ -231,7 +254,22 @@ class FabricService {
       !record.documentHash ||
       !record.txId
     ) {
-      throw new Error(`CORRUPTED_RECORD: missing critical cryptographic fields in event ${eventId}`);
+      logger.securityAudit('FABRIC_EVENT_CORRUPTED_RECORD', {
+        eventId,
+        alert: 'CRITICAL',
+        severity: 'HIGH'
+      });
+      return {
+        verified: false,
+        status: 'CORRUPTED_RECORD',
+        eventId,
+        isCriticalAlert: true,
+        alertLevel: 'CRITICAL',
+        digestValid: false,
+        signatureValid: false,
+        issues: [`CORRUPTED_RECORD: missing critical cryptographic fields in event ${eventId}`],
+        record
+      };
     }
 
     const issues = [];
@@ -239,7 +277,7 @@ class FabricService {
     // 1. Reconstruct canonical event and verify digest
     const canonicalEventService = require('./canonicalEventService');
     const reconstructedEvent = canonicalEventService.createDecryptionEvent({
-      eventId: record.eventId.replace('evt_', 'EVT-'), // Normalize ID format
+      eventId: record.eventId.replace('evt_SES-', 'EVT-').replace('evt_', 'EVT-'), // Normalize ID format
       documentId: record.documentId,
       documentHash: record.documentHash,
       recipientId: record.recipientId,
@@ -277,11 +315,27 @@ class FabricService {
       issues.push(`Signature verification error: ${verifyErr.message}`);
     }
 
+    const verified = digestValid && signatureValid && issues.length === 0;
+    const isCriticalAlert = !verified;
+
+    if (!verified) {
+      logger.securityAudit('FABRIC_EVENT_VERIFY_TAMPER_DETECTED', {
+        eventId: record.eventId,
+        digestValid,
+        signatureValid,
+        issues,
+        alert: 'CRITICAL',
+        severity: 'HIGH'
+      });
+    }
+
     return {
-      verified: digestValid && signatureValid && issues.length === 0,
+      verified,
       eventId: record.eventId,
       txId: record.txId,
-      status: record.status,
+      status: verified ? 'VERIFIED' : 'TAMPER_DETECTED',
+      isCriticalAlert,
+      alertLevel: isCriticalAlert ? 'CRITICAL' : 'NONE',
       timestamp: record.timestamp,
       digestValid,
       signatureValid,

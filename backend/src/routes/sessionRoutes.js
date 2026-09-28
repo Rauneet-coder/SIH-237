@@ -27,6 +27,13 @@ router.get(
   sessionController.getSessionStatus
 );
 
+// Get session metadata (time remaining, doc info, security status)
+router.get(
+  '/:sessionId/metadata',
+  authenticate,
+  sessionController.getSessionMetadata
+);
+
 // Controlled document render: session owner only (fail-closed protected)
 router.get(
   '/:sessionId/render',

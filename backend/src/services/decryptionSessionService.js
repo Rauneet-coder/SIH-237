@@ -25,7 +25,13 @@ const decryptionSessionService = {
   /**
    * Initialize a new Decryption Session for a recipient and document
    */
-  async createSession({ documentId, recipientId, deviceId }) {
+  async createSession({
+    documentId,
+    recipientId,
+    deviceId,
+    cameraEvidenceHash = null,
+    livenessToken = null
+  }) {
     if (!documentId || !recipientId || !deviceId) {
       throw new ValidationError('documentId, recipientId, and deviceId are required');
     }
@@ -48,6 +54,41 @@ const decryptionSessionService = {
       throw new AuthorizationError('Recipient is not authorized for this document');
     }
 
+    // ── STAGE 1.4: ABAC Policy Engine - Clearance Check ──
+    const CLEARANCE_HIERARCHY = {
+      UNCLASSIFIED: 1,
+      RESTRICTED: 2,
+      CONFIDENTIAL: 3,
+      SECRET: 4,
+      TOP_SECRET: 5
+    };
+    const recipientUser = await User.findById(recipientId).exec();
+    if (recipientUser) {
+      const userClearance = recipientUser.clearance || 'RESTRICTED';
+      const userClearanceLevel = CLEARANCE_HIERARCHY[userClearance] || 2;
+      const docClassification = document.classification || 'CONFIDENTIAL';
+      const docClassificationLevel = CLEARANCE_HIERARCHY[docClassification] || 3;
+      if (userClearanceLevel < docClassificationLevel) {
+        logger.securityAudit('CLEARANCE_POLICY_DENIED', {
+          recipientId: recipientId.toString(),
+          userClearance,
+          requiredClassification: docClassification
+        });
+        throw new AuthorizationError(
+          `Security clearance insufficient: Recipient clearance ${userClearance} does not meet document classification ${docClassification}`
+        );
+      }
+    }
+
+    // ── STAGE 1.4: ABAC Policy Engine - Temporal Access Window ──
+    const now = new Date();
+    if (document.validFrom && now < document.validFrom) {
+      throw new AuthorizationError('Document access window is not yet active');
+    }
+    if (document.validUntil && now > document.validUntil) {
+      throw new AuthorizationError('Document access window has expired');
+    }
+
     const sessionId = `SES-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     const sessionNonce = crypto.randomBytes(32).toString('hex');
     const startedAt = new Date();
@@ -59,6 +100,8 @@ const decryptionSessionService = {
       recipientId,
       deviceId,
       sessionNonce,
+      cameraEvidenceHash,
+      livenessToken,
       status: 'CREATED',
       startedAt,
       expiresAt
@@ -67,7 +110,8 @@ const decryptionSessionService = {
     logger.securityAudit('DECRYPTION_SESSION_CREATED', {
       sessionId,
       recipientId: recipientId.toString(),
-      documentId: document._id.toString()
+      documentId: document._id.toString(),
+      hasCameraEvidence: Boolean(cameraEvidenceHash)
     });
 
     return session;
@@ -205,7 +249,9 @@ const decryptionSessionService = {
       await session.save();
 
       // ── STAGE 4: Deterministic Canonical Event & ML-DSA Signing ─────────────
+      const canonicalEventId = `EVT-${session.sessionId.replace('SES-', '')}`;
       const canonicalEvent = canonicalEventService.createDecryptionEvent({
+        eventId: canonicalEventId,
         documentId: document.documentId || document._id.toString(),
         documentHash: document.fileHash,
         recipientId: recipientId.toString(),
@@ -237,6 +283,7 @@ const decryptionSessionService = {
         documentHash: document.fileHash,
         recipientId: recipientId.toString(),
         sessionId: session.sessionId,
+        deviceId: session.deviceId,
         watermarkId,
         watermarkCommitment,
         signingKeyId: canonicalEvent.signingKeyId,
@@ -339,6 +386,37 @@ const decryptionSessionService = {
     }
 
     return cached.buffer;
+  },
+
+  /**
+   * Get metadata and remaining time for a secure viewer session
+   */
+  async getSessionMetadata(sessionId, recipientId) {
+    const session = await DecryptionSession.findOne({ sessionId })
+      .populate('documentId', 'title fileName fileSize classification')
+      .exec();
+    if (!session) {
+      throw new NotFoundError('DecryptionSession');
+    }
+    if (session.recipientId.toString() !== recipientId.toString()) {
+      throw new AuthorizationError('Unauthorized session access');
+    }
+
+    const now = new Date();
+    const isExpired = now > session.expiresAt;
+    const remainingSeconds = Math.max(0, Math.floor((session.expiresAt.getTime() - now.getTime()) / 1000));
+
+    return {
+      sessionId: session.sessionId,
+      status: session.status,
+      watermarkId: session.watermarkId,
+      watermarkCommitment: session.watermarkCommitment,
+      document: session.documentId,
+      remainingSeconds,
+      isExpired,
+      startedAt: session.startedAt,
+      expiresAt: session.expiresAt
+    };
   }
 };
 

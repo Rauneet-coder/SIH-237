@@ -102,10 +102,24 @@ const documentSchema = new mongoose.Schema(
       type: String,
       default: null // Relative filesystem path in encrypted vault
     },
+    // Structural layout content fingerprint (HLD 1.3)
+    structuralFingerprint: {
+      type: String,
+      default: null
+    },
     classification: {
       type: String,
-      enum: ['RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'],
+      enum: ['UNCLASSIFIED', 'RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'],
       default: 'CONFIDENTIAL'
+    },
+    // Temporal access policy window (HLD 1.4)
+    validFrom: {
+      type: Date,
+      default: null
+    },
+    validUntil: {
+      type: Date,
+      default: null
     },
     version: {
       type: Number,

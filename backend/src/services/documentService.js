@@ -7,6 +7,7 @@ const keyAgentClient = require('./keyAgentClient');
 const fileVaultService = require('./fileVaultService');
 const provenanceService = require('./provenanceService');
 const collusionService = require('./collusionService');
+const fingerprintService = require('./fingerprintService');
 const logger = require('../utils/logger');
 const { NotFoundError, AuthorizationError, ValidationError, CryptoError } = require('../utils/errors');
 
@@ -26,7 +27,9 @@ async function uploadAndEncryptDocument({
   mimeType = 'application/pdf',
   senderId,
   recipientIds = [],
-  classification = 'CONFIDENTIAL'
+  classification = 'CONFIDENTIAL',
+  validFrom = null,
+  validUntil = null
 }) {
   if (!title) {
     throw new ValidationError('Document title is required');
@@ -38,8 +41,9 @@ async function uploadAndEncryptDocument({
     throw new ValidationError('Sender ID is required');
   }
 
-  // 1. Calculate plaintext SHA-256 hash (canonical binding)
+  // 1. Calculate plaintext SHA-256 hash (canonical binding) & structural fingerprint (HLD 1.2 & 1.3)
   const fileHash = cryptoService.computeHash(fileBuffer);
+  const structuralFingerprint = fingerprintService.computeStructuralFingerprint(fileBuffer, mimeType);
   // High-entropy 16 hex char (8 byte) document identifier per HLD 1.1
   const documentId = `DOC-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
 
@@ -53,11 +57,13 @@ async function uploadAndEncryptDocument({
   const symmetricKey = cryptoService.generateSymmetricKey();
   const { encryptedBlob, iv, authTag } = cryptoService.encryptDocument(fileBuffer, symmetricKey);
 
-  // 4. Build per-recipient ML-KEM Key Envelopes and legacy RSA keys
+  // 4. Build per-recipient ML-KEM Key Envelopes and legacy RSA keys (Fail-Closed: HLD 2.2)
   const keyEnvelopes = [];
   const recipientKeys = [];
 
   for (const recipient of recipients) {
+    let encapsulated = false;
+
     // Post-Quantum ML-KEM Envelope
     if (recipient.mlKemPublicKey) {
       try {
@@ -69,23 +75,37 @@ async function uploadAndEncryptDocument({
           documentHash: fileHash
         });
         keyEnvelopes.push(envelope);
+        encapsulated = true;
       } catch (err) {
-        logger.warn(`Failed to create ML-KEM envelope for recipient ${recipient.username}`, {
+        symmetricKey.fill(0);
+        logger.error(`Fail-closed: Key encapsulation failed for recipient ${recipient.username}`, {
           error: err.message
         });
+        throw new CryptoError(`Fail-closed: Key encapsulation failed for recipient ${recipient.username}: ${err.message}`);
       }
     }
 
     // Legacy RSA Wrapping
     if (recipient.publicKey) {
-      const encryptedSymmetricKey = cryptoService.encryptSymmetricKey(
-        symmetricKey,
-        recipient.publicKey
-      );
-      recipientKeys.push({
-        recipientId: recipient._id,
-        encryptedSymmetricKey
-      });
+      try {
+        const encryptedSymmetricKey = cryptoService.encryptSymmetricKey(
+          symmetricKey,
+          recipient.publicKey
+        );
+        recipientKeys.push({
+          recipientId: recipient._id,
+          encryptedSymmetricKey
+        });
+        encapsulated = true;
+      } catch (err) {
+        symmetricKey.fill(0);
+        throw new CryptoError(`Fail-closed: RSA key wrapping failed for recipient ${recipient.username}: ${err.message}`);
+      }
+    }
+
+    if (!encapsulated) {
+      symmetricKey.fill(0);
+      throw new ValidationError(`Fail-closed: Recipient ${recipient.username} has no valid cryptographic public key registered`);
     }
   }
 
@@ -117,7 +137,7 @@ async function uploadAndEncryptDocument({
     logger.warn(`Could not store to filesystem vault, falling back to database: ${vaultErr.message}`);
   }
 
-  // 7. Store document record
+  // 7. Store document record with structural fingerprint and temporal policy
   const document = new Document({
     documentId,
     title,
@@ -126,11 +146,14 @@ async function uploadAndEncryptDocument({
     mimeType,
     fileSize: fileBuffer.length,
     fileHash,
+    structuralFingerprint,
     encryptedBlob,
     iv,
     authTag,
     storagePath,
     classification,
+    validFrom: validFrom ? new Date(validFrom) : null,
+    validUntil: validUntil ? new Date(validUntil) : null,
     recipientKeys,
     keyEnvelopes
   });
@@ -141,6 +164,7 @@ async function uploadAndEncryptDocument({
     docId: document._id.toString(),
     documentId,
     fileHash,
+    structuralFingerprint,
     recipientCount: keyEnvelopes.length,
     algorithm: 'AES-256-GCM + ML-KEM-1024'
   });

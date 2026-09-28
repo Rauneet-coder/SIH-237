@@ -18,9 +18,11 @@ router.get(
   authController.getRecipients
 );
 
-// Device binding routes
+// Device binding & challenge-response possession routes
 router.post('/devices', authenticate, authController.registerDevice);
 router.get('/devices', authenticate, authController.getDevices);
+router.post('/devices/challenge', authenticate, authController.generateDeviceChallenge);
+router.post('/devices/verify', authenticate, authController.verifyDeviceChallenge);
 
 // Key lifecycle & revocation routes
 router.post('/keys/revoke', authenticate, authController.revokeKey);

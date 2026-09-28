@@ -8,7 +8,7 @@ const { ValidationError, NotFoundError } = require('../utils/errors');
  */
 async function createSession(req, res, next) {
   try {
-    const { documentId } = req.body;
+    const { documentId, cameraEvidenceHash, livenessToken } = req.body;
     const deviceId = req.headers['x-device-id'] || req.body.deviceId;
 
     if (!documentId) {
@@ -22,7 +22,9 @@ async function createSession(req, res, next) {
     const session = await decryptionSessionService.createSession({
       documentId,
       recipientId: req.user._id,
-      deviceId
+      deviceId,
+      cameraEvidenceHash,
+      livenessToken
     });
 
     return res.status(201).json({
@@ -122,9 +124,23 @@ async function getControlledDocument(req, res, next) {
   }
 }
 
+/**
+ * Get active session metadata (time remaining, security status, doc info)
+ */
+async function getSessionMetadata(req, res, next) {
+  try {
+    const { sessionId } = req.params;
+    const metadata = await decryptionSessionService.getSessionMetadata(sessionId, req.user._id);
+    return res.json({ success: true, metadata });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createSession,
   prepareSession,
   getSessionStatus,
-  getControlledDocument
+  getControlledDocument,
+  getSessionMetadata
 };

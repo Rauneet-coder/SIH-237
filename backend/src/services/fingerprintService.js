@@ -90,6 +90,65 @@ const fingerprintService = {
     }
 
     return await watermarkBridge.extract(leakedBuffer);
+  },
+
+  /**
+   * Compute normalized structural layout fingerprint for a document (HLD Stage 1.3)
+   * Captures PDF structural layout, object catalog, fonts, and page geometry
+   * independent of volatile compression or minor byte drift.
+   *
+   * @param {Buffer} fileBuffer
+   * @param {string} [mimeType='application/pdf']
+   * @returns {string} Hex SHA-256 structural content fingerprint
+   */
+  computeStructuralFingerprint(fileBuffer, mimeType = 'application/pdf') {
+    if (!Buffer.isBuffer(fileBuffer) || fileBuffer.length === 0) {
+      throw new WatermarkError('Invalid file buffer for structural fingerprinting');
+    }
+
+    const rawStr = fileBuffer.toString('binary');
+    const structuralTokens = [];
+
+    // 1. PDF Header Version
+    const headerMatch = rawStr.match(/^%PDF-([0-9.]+)/);
+    structuralTokens.push(headerMatch ? headerMatch[0] : '%PDF-GENERIC');
+
+    // 2. Page & MediaBox geometry
+    const pageMatches = rawStr.match(/\/Type\s*\/Page\b/g);
+    structuralTokens.push(`PAGES:${pageMatches ? pageMatches.length : 0}`);
+
+    const mediaBoxes = rawStr.match(/\/MediaBox\s*\[[^\]]+\]/g);
+    if (mediaBoxes) {
+      structuralTokens.push(`BOXES:${mediaBoxes.sort().join(';')}`);
+    }
+
+    // 3. Font and Resource dictionary names
+    const fontMatches = rawStr.match(/\/BaseFont\s*\/([A-Za-z0-9_\-+]+)/g);
+    if (fontMatches) {
+      const uniqueFonts = Array.from(new Set(fontMatches)).sort();
+      structuralTokens.push(`FONTS:${uniqueFonts.join(',')}`);
+    }
+
+    // 4. Object count and structure
+    const objMatches = rawStr.match(/\b\d+\s+\d+\s+obj\b/g);
+    structuralTokens.push(`OBJECTS:${objMatches ? objMatches.length : 0}`);
+
+    // If PDF markers are absent, tokenize alphanumeric words/layout
+    if (structuralTokens.length <= 2) {
+      const normalizedWords = rawStr
+        .replace(/[^a-zA-Z0-9]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 3)
+        .slice(0, 100);
+      structuralTokens.push(`WORDS:${normalizedWords.join(',')}`);
+    }
+
+    const canonicalStructure = structuralTokens.join('|');
+    return crypto
+      .createHash('sha256')
+      .update('SIH237-STRUCTURAL-LAYOUT-v1:')
+      .update(canonicalStructure)
+      .digest('hex');
   }
 };
 

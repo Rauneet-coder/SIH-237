@@ -27,6 +27,7 @@ const userSchema = new mongoose.Schema(
         'investigator',
         'admin',
         'auditor',
+        'SENDER',
         'ADMIN',
         'DOCUMENT_OWNER',
         'RECIPIENT',
@@ -34,6 +35,12 @@ const userSchema = new mongoose.Schema(
         'AUDITOR'
       ],
       default: 'recipient'
+    },
+    // Security Clearance Level for ABAC Policy Enforcement
+    clearance: {
+      type: String,
+      enum: ['UNCLASSIFIED', 'RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'],
+      default: 'TOP_SECRET'
     },
     // Legacy RSA-2048 Public Key (SPKI PEM)
     publicKey: {

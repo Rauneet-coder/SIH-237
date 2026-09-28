@@ -12,13 +12,27 @@ async function traceCollusion(req, res, next) {
 
     const document = await Document.findById(docId)
       .populate('recipientKeys.recipientId', 'username email role')
+      .populate('keyEnvelopes.recipientId', 'username email role')
       .exec();
 
     if (!document) {
       return res.status(404).json({ error: 'Document not found.' });
     }
 
-    if (!document.recipientKeys || document.recipientKeys.length === 0) {
+    // Collect unique recipients across both PQC envelopes and legacy keys
+    const recipientMap = new Map();
+    for (const rk of document.recipientKeys || []) {
+      if (rk.recipientId && rk.recipientId._id) {
+        recipientMap.set(rk.recipientId._id.toString(), rk.recipientId);
+      }
+    }
+    for (const ke of document.keyEnvelopes || []) {
+      if (ke.recipientId && ke.recipientId._id) {
+        recipientMap.set(ke.recipientId._id.toString(), ke.recipientId);
+      }
+    }
+
+    if (recipientMap.size === 0) {
       return res.status(400).json({ error: 'Document has no registered recipients.' });
     }
 
@@ -51,8 +65,7 @@ async function traceCollusion(req, res, next) {
     const biases = collusionService.generateBiasVector(docId.toString());
 
     // 3. Build candidate list of all recipients
-    const candidates = document.recipientKeys.map((rk) => {
-      const user = rk.recipientId;
+    const candidates = Array.from(recipientMap.values()).map((user) => {
       const codeword = collusionService.generateRecipientCodeword(
         docId.toString(),
         user._id.toString(),
@@ -106,16 +119,29 @@ async function simulateCollusionAttack(req, res, next) {
 
     const document = await Document.findById(docId)
       .populate('recipientKeys.recipientId', 'username email role')
+      .populate('keyEnvelopes.recipientId', 'username email role')
       .exec();
 
     if (!document) {
       return res.status(404).json({ error: 'Document not found.' });
     }
 
+    // Collect unique recipients across both PQC envelopes and legacy keys
+    const recipientMap = new Map();
+    for (const rk of document.recipientKeys || []) {
+      if (rk.recipientId && rk.recipientId._id) {
+        recipientMap.set(rk.recipientId._id.toString(), rk.recipientId);
+      }
+    }
+    for (const ke of document.keyEnvelopes || []) {
+      if (ke.recipientId && ke.recipientId._id) {
+        recipientMap.set(ke.recipientId._id.toString(), ke.recipientId);
+      }
+    }
+
     // 1. Generate biases and candidate codewords
     const biases = collusionService.generateBiasVector(docId.toString());
-    const candidates = document.recipientKeys.map((rk) => {
-      const user = rk.recipientId;
+    const candidates = Array.from(recipientMap.values()).map((user) => {
       const codeword = collusionService.generateRecipientCodeword(
         docId.toString(),
         user._id.toString(),
