@@ -50,6 +50,18 @@ const provenanceLogSchema = new mongoose.Schema(
     details: {
       type: mongoose.Schema.Types.Mixed,
       default: {}
+    },
+    schemaVersion: {
+      type: Number,
+      default: 2
+    },
+    detailsHash: {
+      type: String,
+      default: null
+    },
+    authorityKeyId: {
+      type: String,
+      default: 'SERVER-AUTHORITY-RSA-V1'
     }
   },
   {

@@ -202,10 +202,10 @@ export function LedgerConsole() {
             padding: '20px'
           }}
         >
-          <div className="card card-elevated" style={{ width: '100%', maxWidth: '640px', border: '1px solid #ffffff' }}>
+          <div className="card card-elevated" style={{ width: '100%', maxWidth: '640px', border: '1px solid var(--text-primary)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShieldCheck size={20} color="#34d399" />
+                <ShieldCheck size={20} color="#52764a" />
                 <span className="font-bold text-base text-primary">FULL CHAIN CRYPTOGRAPHIC AUDIT REPORT</span>
               </div>
               <button onClick={() => setShowAuditModal(false)} className="btn btn-secondary btn-sm">
@@ -225,8 +225,8 @@ export function LedgerConsole() {
 
               return (
                 <>
-                  <div style={{ margin: '16px 0', padding: '14px', borderRadius: 'var(--radius-xs)', background: isValid ? '#0d2818' : '#2b1212', border: `1px solid ${isValid ? '#065f46' : '#7f1d1d'}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isValid ? '#34d399' : '#f87171' }}>
+                  <div style={{ margin: '16px 0', padding: '14px', borderRadius: 'var(--radius-xs)', background: isValid ? '#edf2e8' : '#f7eae6', border: `1px solid ${isValid ? '#c6d5bc' : '#dfbcb2'}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isValid ? '#52764a' : '#aa493c' }}>
                       {isValid ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
                       <span className="font-bold text-sm">
                         {isValid ? 'PROVENANCE CHAIN INTEGRITY 100% VERIFIED' : 'TAMPER DETECTED IN LEDGER CHAIN'}

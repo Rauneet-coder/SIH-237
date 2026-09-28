@@ -34,7 +34,12 @@ const env = {
   WATERMARK_TIMEOUT_MS: parseInt(process.env.WATERMARK_TIMEOUT_MS || '5000', 10),
 
   // Key Agent Interface (Private key boundary)
+  KEY_AGENT_PORT: parseInt(process.env.KEY_AGENT_PORT || '8002', 10),
   KEY_AGENT_URL: process.env.KEY_AGENT_URL || 'http://127.0.0.1:8002',
+  KEY_AGENT_HMAC_SECRET: process.env.KEY_AGENT_HMAC_SECRET || 'dev_key_agent_hmac_secret_32bytes_sih237',
+  KEY_AGENT_SECURE_MODE: process.env.KEY_AGENT_SECURE_MODE === 'true' || process.env.NODE_ENV === 'production',
+  KEY_AGENT_KEYSTORE_PATH: process.env.KEY_AGENT_KEYSTORE_PATH || './storage/key-agent-keystore',
+  WATERMARK_REQUIRED: process.env.WATERMARK_REQUIRED === 'true' || process.env.NODE_ENV === 'production',
 
   // Hyperledger Fabric Configuration
   FABRIC_ENABLED: process.env.FABRIC_ENABLED === 'true',
@@ -42,6 +47,10 @@ const env = {
   FABRIC_CHAINCODE: process.env.FABRIC_CHAINCODE || 'provenance',
   FABRIC_GATEWAY_PEER: process.env.FABRIC_GATEWAY_PEER || 'peer0.org1.example.com',
   FABRIC_MSP_ID: process.env.FABRIC_MSP_ID || 'Org1MSP',
+
+  // Legacy decrypt endpoint (SECURITY: disabled by default in secure mode)
+  // Set to 'true' only for backward-compatible testing environments
+  LEGACY_DECRYPT_ENABLED: process.env.LEGACY_DECRYPT_ENABLED === 'true' || (process.env.NODE_ENV !== 'production' && process.env.LEGACY_DECRYPT_ENABLED !== 'false'),
 
   // Document Storage Vault
   ENCRYPTED_STORAGE_DIR: process.env.ENCRYPTED_STORAGE_DIR || './storage/encrypted'

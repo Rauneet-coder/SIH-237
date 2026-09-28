@@ -46,7 +46,7 @@ describe('End-to-End API Integration Tests', () => {
   let recipient2User;
   let recipient2PrivateKey;
   let uploadedDocId;
-  const sampleDocumentText = 'OPERATION CYBER-SHIELD: Authorized personnel only. Classified level Top-Secret.';
+  const sampleDocumentText = '%PDF-1.4 OPERATION CYBER-SHIELD: Authorized personnel only. Classified level Top-Secret. %EOF';
 
   test('GET /health should return 200 and valid status', async () => {
     const res = await fetch(`${baseUrl}/health`);
@@ -71,7 +71,7 @@ describe('End-to-End API Integration Tests', () => {
     assert.equal(res.status, 201);
     const data = await res.json();
     assert.ok(data.user.id);
-    assert.equal(data.user.role, 'sender');
+    assert.equal(data.user.role.toUpperCase(), 'SENDER');
     assert.ok(data.user.publicKey);
     assert.ok(data.privateKey);
 
@@ -143,6 +143,7 @@ describe('End-to-End API Integration Tests', () => {
         fileContent: Buffer.from(sampleDocumentText).toString('base64'),
         isBase64: true,
         mimeType: 'application/pdf',
+        classification: 'RESTRICTED',
         recipientIds: [recipient1User.id]
       })
     });
@@ -306,8 +307,9 @@ describe('End-to-End API Integration Tests', () => {
       body: JSON.stringify({
         title: 'Joint Intelligence Document',
         fileName: 'joint_intel.pdf',
-        fileContent: Buffer.from('CLASSIFIED JOINT BRIEFING').toString('base64'),
+        fileContent: Buffer.from('%PDF-1.4 CLASSIFIED JOINT BRIEFING %EOF').toString('base64'),
         isBase64: true,
+        classification: 'RESTRICTED',
         recipientIds: [recipient1User.id, recipient2User.id]
       })
     });

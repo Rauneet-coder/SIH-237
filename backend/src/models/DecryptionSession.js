@@ -53,6 +53,15 @@ const decryptionSessionSchema = new mongoose.Schema(
       type: String,
       default: null
     },
+    // Stage 3 Biometric / Liveness Evidence Reference (HLD 3.5)
+    cameraEvidenceHash: {
+      type: String,
+      default: null
+    },
+    livenessToken: {
+      type: String,
+      default: null
+    },
     // Canonical Signed Event Record
     canonicalEvent: {
       type: mongoose.Schema.Types.Mixed,

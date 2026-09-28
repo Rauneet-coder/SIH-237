@@ -5,8 +5,9 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "start:keyagent": "node src/services/key-agent-server.js",
     "dev": "node --watch src/server.js",
-    "test": "NODE_ENV=test node --test --test-concurrency=1 tests/*.test.js"
+    "test": "NODE_ENV=test LEGACY_DECRYPT_ENABLED=true node --test --test-concurrency=1 tests/*.test.js"
   },
   "keywords": [
     "cryptography",

@@ -8,6 +8,7 @@ const authRoutes = require('./routes/authRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const provenanceRoutes = require('./routes/provenanceRoutes');
 const sessionRoutes = require('./routes/sessionRoutes');
+const forensicRoutes = require('./routes/forensicRoutes');
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/provenance', provenanceRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/forensics', forensicRoutes);
 
 // Centralized Error Handling
 app.use(errorHandler);

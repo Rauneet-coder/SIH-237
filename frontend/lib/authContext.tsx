@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api, User } from './api';
 import { DEMO_PRIVATE_KEYS } from './demoKeys';
+import { getClientDevice } from './device';
 
 interface AuthContextType {
   user: User | null;
@@ -10,7 +11,7 @@ interface AuthContextType {
   cachedPrivateKey: string | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string, role?: string) => Promise<string>;
+  register: (username: string, email: string, password: string, role?: string) => Promise<string | undefined>;
   logout: () => void;
   setCachedPrivateKey: (key: string | null) => void;
   quickSwitchUser: (profile: DemoProfile) => Promise<void>;
@@ -122,7 +123,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (username: string, password: string) => {
     setIsLoading(true);
     try {
-      const res = await api.login({ username, password });
+      const dev = getClientDevice();
+      const res = await api.login({
+        username,
+        password,
+        deviceId: dev.deviceId,
+        deviceFingerprint: dev.deviceFingerprint
+      });
       setToken(res.token);
       setUser(res.user);
       localStorage.setItem('sih_auth_token', res.token);
@@ -143,7 +150,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const register = async (username: string, email: string, password: string, role = 'recipient') => {
     setIsLoading(true);
     try {
-      const res = await api.register({ username, email, password, role });
+      const dev = getClientDevice();
+      const res = await api.register({
+        username,
+        email,
+        password,
+        role,
+        deviceId: dev.deviceId,
+        deviceFingerprint: dev.deviceFingerprint,
+        platform: dev.platform
+      });
       if (res.privateKey) {
         localStorage.setItem(`sih_key_${username}`, res.privateKey);
         handleSetCachedPrivateKey(res.privateKey, username);
@@ -166,15 +182,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const quickSwitchUser = async (profile: DemoProfile) => {
     setIsLoading(true);
     const password = 'Password@123';
+    const dev = getClientDevice();
     try {
       // Try login first
-      const res = await api.login({ username: profile.username, password });
+      const res = await api.login({
+        username: profile.username,
+        password,
+        deviceId: dev.deviceId,
+        deviceFingerprint: dev.deviceFingerprint
+      });
       setToken(res.token);
       setUser(res.user);
       localStorage.setItem('sih_auth_token', res.token);
       localStorage.setItem('sih_auth_user', JSON.stringify(res.user));
 
-      // Load matching RSA private key
+      // Load matching RSA private key if available
       if (DEMO_PRIVATE_KEYS && DEMO_PRIVATE_KEYS[profile.username]) {
         handleSetCachedPrivateKey(DEMO_PRIVATE_KEYS[profile.username], profile.username);
       } else {
@@ -188,14 +210,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           username: profile.username,
           email: profile.email,
           password,
-          role: profile.role
+          role: profile.role,
+          deviceId: dev.deviceId,
+          deviceFingerprint: dev.deviceFingerprint,
+          platform: dev.platform
         });
         if (regRes.privateKey) {
           localStorage.setItem(`sih_key_${profile.username}`, regRes.privateKey);
           handleSetCachedPrivateKey(regRes.privateKey);
         }
         // Then login
-        const loginRes = await api.login({ username: profile.username, password });
+        const loginRes = await api.login({
+          username: profile.username,
+          password,
+          deviceId: dev.deviceId,
+          deviceFingerprint: dev.deviceFingerprint
+        });
         setToken(loginRes.token);
         setUser(loginRes.user);
         localStorage.setItem('sih_auth_token', loginRes.token);

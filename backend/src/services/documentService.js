@@ -1,20 +1,26 @@
+'use strict';
+
 const crypto = require('node:crypto');
 const Document = require('../models/Document');
 const User = require('../models/User');
 const cryptoService = require('./cryptoService');
 const keyEnvelopeService = require('./keyEnvelopeService');
 const keyAgentClient = require('./keyAgentClient');
+const fileVaultService = require('./fileVaultService');
 const provenanceService = require('./provenanceService');
 const collusionService = require('./collusionService');
+const fingerprintService = require('./fingerprintService');
 const logger = require('../utils/logger');
 const { NotFoundError, AuthorizationError, ValidationError, CryptoError } = require('../utils/errors');
 
 /**
  * Upload and encrypt a document for multi-recipient distribution
+ * - Validates PDF buffer format and size boundaries
  * - Generates random 32-byte AES DEK
  * - Encrypts plaintext file exactly ONCE using AES-256-GCM
  * - Encapsulates DEK for each recipient using NIST FIPS 203 ML-KEM-1024
  * - Retains legacy RSA-OAEP wrapping for backwards compatibility
+ * - Stores ciphertext in isolated filesystem vault with mode 0600 (omits 50MB Base64 duplicate in MongoDB)
  * - Immutably logs upload event
  * - Securely zeroizes plaintext DEK from volatile memory
  */
@@ -25,7 +31,9 @@ async function uploadAndEncryptDocument({
   mimeType = 'application/pdf',
   senderId,
   recipientIds = [],
-  classification = 'CONFIDENTIAL'
+  classification = 'CONFIDENTIAL',
+  validFrom = null,
+  validUntil = null
 }) {
   if (!title) {
     throw new ValidationError('Document title is required');
@@ -37,25 +45,32 @@ async function uploadAndEncryptDocument({
     throw new ValidationError('Sender ID is required');
   }
 
-  // 1. Calculate plaintext SHA-256 hash (canonical binding)
-  const fileHash = cryptoService.computeHash(fileBuffer);
-  const documentId = `DOC-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  // 1. Validate PDF format and bounds (HLD 1.6 & 1.7)
+  fileVaultService.validatePdfBuffer(fileBuffer);
 
-  // 2. Fetch and validate recipients
+  // 2. Calculate plaintext SHA-256 hash (canonical binding) & structural layout fingerprint (HLD 1.2 & 1.3)
+  const fileHash = cryptoService.computeHash(fileBuffer);
+  const structuralFingerprint = fingerprintService.computeStructuralFingerprint(fileBuffer, mimeType);
+  // High-entropy 16 hex char (8 byte) document identifier per HLD 1.1
+  const documentId = `DOC-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
+
+  // 3. Fetch and validate recipients
   const recipients = await User.find({ _id: { $in: recipientIds }, isActive: true }).exec();
   if (recipients.length === 0 && recipientIds.length > 0) {
     throw new ValidationError('No valid active recipients found for specified IDs');
   }
 
-  // 3. Generate symmetric DEK and encrypt document ONCE with AES-256-GCM
+  // 4. Generate symmetric DEK and encrypt document ONCE with AES-256-GCM
   const symmetricKey = cryptoService.generateSymmetricKey();
   const { encryptedBlob, iv, authTag } = cryptoService.encryptDocument(fileBuffer, symmetricKey);
 
-  // 4. Build per-recipient ML-KEM Key Envelopes and legacy RSA keys
+  // 5. Build per-recipient ML-KEM Key Envelopes and legacy RSA keys (Fail-Closed: HLD 2.2)
   const keyEnvelopes = [];
   const recipientKeys = [];
 
   for (const recipient of recipients) {
+    let encapsulated = false;
+
     // Post-Quantum ML-KEM Envelope
     if (recipient.mlKemPublicKey) {
       try {
@@ -67,23 +82,37 @@ async function uploadAndEncryptDocument({
           documentHash: fileHash
         });
         keyEnvelopes.push(envelope);
+        encapsulated = true;
       } catch (err) {
-        logger.warn(`Failed to create ML-KEM envelope for recipient ${recipient.username}`, {
+        symmetricKey.fill(0);
+        logger.error(`Fail-closed: Key encapsulation failed for recipient ${recipient.username}`, {
           error: err.message
         });
+        throw new CryptoError(`Fail-closed: Key encapsulation failed for recipient ${recipient.username}: ${err.message}`);
       }
     }
 
     // Legacy RSA Wrapping
     if (recipient.publicKey) {
-      const encryptedSymmetricKey = cryptoService.encryptSymmetricKey(
-        symmetricKey,
-        recipient.publicKey
-      );
-      recipientKeys.push({
-        recipientId: recipient._id,
-        encryptedSymmetricKey
-      });
+      try {
+        const encryptedSymmetricKey = cryptoService.encryptSymmetricKey(
+          symmetricKey,
+          recipient.publicKey
+        );
+        recipientKeys.push({
+          recipientId: recipient._id,
+          encryptedSymmetricKey
+        });
+        encapsulated = true;
+      } catch (err) {
+        symmetricKey.fill(0);
+        throw new CryptoError(`Fail-closed: RSA key wrapping failed for recipient ${recipient.username}: ${err.message}`);
+      }
+    }
+
+    if (!encapsulated) {
+      symmetricKey.fill(0);
+      throw new ValidationError(`Fail-closed: Recipient ${recipient.username} has no valid cryptographic public key registered`);
     }
   }
 
@@ -104,10 +133,20 @@ async function uploadAndEncryptDocument({
     }
   }
 
-  // 5. SECURE ZEROIZATION: Purge plaintext DEK from volatile memory
+  // 6. SECURE ZEROIZATION: Purge plaintext DEK from volatile memory
   symmetricKey.fill(0);
 
-  // 6. Store document record
+  // 7. Persist ciphertext to isolated filesystem vault (HLD 2.6) with mode 0600
+  let storagePath = null;
+  try {
+    storagePath = fileVaultService.storeCiphertext(documentId, encryptedBlob);
+  } catch (vaultErr) {
+    logger.error(`FileVault storage failure: ${vaultErr.message}`);
+    throw new CryptoError(`Failed to persist document ciphertext to secure vault: ${vaultErr.message}`);
+  }
+
+  // 8. Store document record with structural fingerprint and temporal policy
+  // When stored to filesystem vault, omit duplicated Base64 blob from MongoDB
   const document = new Document({
     documentId,
     title,
@@ -116,25 +155,38 @@ async function uploadAndEncryptDocument({
     mimeType,
     fileSize: fileBuffer.length,
     fileHash,
-    encryptedBlob,
+    structuralFingerprint,
+    encryptedBlob: storagePath ? null : encryptedBlob,
     iv,
     authTag,
+    storagePath,
     classification,
+    validFrom: validFrom ? new Date(validFrom) : null,
+    validUntil: validUntil ? new Date(validUntil) : null,
     recipientKeys,
     keyEnvelopes
   });
 
-  await document.save();
+  try {
+    await document.save();
+  } catch (dbErr) {
+    // Rollback: clean up filesystem ciphertext if DB persistence fails
+    fileVaultService.cleanupCiphertext(storagePath);
+    throw dbErr;
+  }
 
   logger.securityAudit('DOCUMENT_UPLOAD_ENCRYPT_ONCE', {
     docId: document._id.toString(),
     documentId,
     fileHash,
+    structuralFingerprint,
     recipientCount: keyEnvelopes.length,
+    classification,
+    storagePath,
     algorithm: 'AES-256-GCM + ML-KEM-1024'
   });
 
-  // 7. Log upload event to provenance audit chain
+  // 9. Log upload event to provenance audit chain
   await provenanceService.logProvenanceEvent({
     docId: document._id,
     recipientId: senderId,
@@ -144,7 +196,8 @@ async function uploadAndEncryptDocument({
       title,
       fileName: document.fileName,
       fileHash,
-      recipientCount: keyEnvelopes.length
+      recipientCount: keyEnvelopes.length,
+      classification
     }
   });
 
@@ -153,7 +206,8 @@ async function uploadAndEncryptDocument({
 
 /**
  * Decrypt document for an authorized recipient with attribution logging
- * Supports both modern ML-KEM key agent decapsulation and legacy RSA keys
+ * Supports both modern ML-KEM key agent decapsulation and legacy RSA keys.
+ * Loads ciphertext from secure filesystem vault.
  */
 async function decryptDocumentForRecipient({
   docId,
@@ -246,8 +300,9 @@ async function decryptDocumentForRecipient({
   // 2. Decrypt document with AES-256-GCM and verify authentication tag
   let decryptedBuffer;
   try {
+    const ciphertext = fileVaultService.loadCiphertext(document);
     decryptedBuffer = cryptoService.decryptDocument(
-      document.encryptedBlob,
+      ciphertext,
       symmetricKey,
       document.iv,
       document.authTag

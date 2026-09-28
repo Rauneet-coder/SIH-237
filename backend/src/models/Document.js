@@ -85,10 +85,16 @@ const documentSchema = new mongoose.Schema(
       required: true, // SHA-256 of original plaintext
       index: true
     },
-    // AES-256-GCM Single Ciphertext
+    // AES-256-GCM Single Ciphertext (or reference to filesystem vault)
     encryptedBlob: {
       type: String,
-      required: true // AES-256-GCM ciphertext (Base64)
+      default: null,
+      validate: {
+        validator: function(v) {
+          return Boolean(v || this.storagePath);
+        },
+        message: 'Either encryptedBlob or storagePath must be provided'
+      }
     },
     iv: {
       type: String,
@@ -98,10 +104,28 @@ const documentSchema = new mongoose.Schema(
       type: String,
       required: true // 16-byte GCM authentication tag (Hex)
     },
+    storagePath: {
+      type: String,
+      default: null // Relative filesystem path in encrypted vault
+    },
+    // Structural layout content fingerprint (HLD 1.3)
+    structuralFingerprint: {
+      type: String,
+      default: null
+    },
     classification: {
       type: String,
-      enum: ['RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'],
+      enum: ['UNCLASSIFIED', 'RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'],
       default: 'CONFIDENTIAL'
+    },
+    // Temporal access policy window (HLD 1.4)
+    validFrom: {
+      type: Date,
+      default: null
+    },
+    validUntil: {
+      type: Date,
+      default: null
     },
     version: {
       type: Number,

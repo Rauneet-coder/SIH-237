@@ -165,8 +165,8 @@ export function DispatchConsole({ onSuccess }: DispatchConsoleProps) {
         </div>
 
         {!isSenderOrAdmin && (
-          <div style={{ background: '#1c150c', border: '1px solid #78350f', borderRadius: 'var(--radius-xs)', padding: '10px 12px', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24', fontSize: '11px', fontWeight: 600 }}>
+          <div style={{ background: '#f6efdf', border: '1px solid #dfcda8', borderRadius: 'var(--radius-xs)', padding: '10px 12px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#956c25', fontSize: '11px', fontWeight: 600 }}>
               <ShieldAlert size={14} />
               <span>RBAC NOTICE: Currently Logged In as [{user?.role?.toUpperCase()}]</span>
             </div>
@@ -407,9 +407,9 @@ export function DispatchConsole({ onSuccess }: DispatchConsoleProps) {
 
         {/* Confirmation Output */}
         {uploadedDoc && (
-          <div className="card card-elevated" style={{ border: '1px solid #ffffff' }}>
+          <div className="card card-elevated" style={{ border: '1px solid var(--text-primary)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-              <CheckCircle size={16} color="#34d399" />
+              <CheckCircle size={16} color="#52764a" />
               <span className="font-bold text-sm text-primary">DOCUMENT DISPATCHED & LOGGED</span>
             </div>
 

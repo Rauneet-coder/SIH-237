@@ -42,6 +42,7 @@ describe('Phase 6: Hyperledger Fabric Network & Ledger Invariants', () => {
       email: 'alice@fabric.mod.gov.in',
       password: 'dummy_password',
       role: 'RECIPIENT',
+      clearance: 'TOP_SECRET',
       publicKey: dummyRsa.publicKey,
       mlKemPublicKey: userKeys.mlKemPublicKey,
       mlDsaPublicKey: userKeys.mlDsaPublicKey,
@@ -178,18 +179,39 @@ describe('Phase 6: Hyperledger Fabric Network & Ledger Invariants', () => {
   });
 
   test('Queries ledger by Event ID and verifies integrity', async () => {
+    const canonicalEventService = require('../src/services/canonicalEventService');
+    const timestamp = new Date().toISOString();
     const eventId = 'evt_fabric_query_001';
-    await fabricService.recordDecryptionEvent({
-      eventId,
-      eventDigest: crypto.randomBytes(32).toString('hex'),
-      documentId: 'doc_lookup_1',
-      documentHash: crypto.randomBytes(32).toString('hex'),
-      recipientId: 'rec_lookup_1',
+
+    const rawEvent = canonicalEventService.createDecryptionEvent({
+      eventId: 'EVT-fabric_query_001',
+      documentId: document.documentId,
+      documentHash: document.fileHash,
+      recipientId: recipient._id.toString(),
       sessionId: 'sess_lookup_1',
+      deviceId: DEVICE_ID,
       watermarkId: 'wm_lookup_1',
       watermarkCommitment: 'commit_lookup_1',
       signingKeyId: 'ML-DSA-65-V1',
-      signature: crypto.randomBytes(64).toString('hex')
+      timestamp
+    });
+
+    const { eventDigest } = canonicalEventService.computeEventDigest(rawEvent);
+    const signature = await keyAgentClient.sign('fabric_alice', Buffer.from(eventDigest, 'hex'));
+
+    await fabricService.recordDecryptionEvent({
+      eventId,
+      eventDigest,
+      documentId: rawEvent.documentId,
+      documentHash: rawEvent.documentHash,
+      recipientId: recipient._id.toString(),
+      sessionId: rawEvent.sessionId,
+      deviceId: DEVICE_ID,
+      watermarkId: rawEvent.watermarkId,
+      watermarkCommitment: rawEvent.watermarkCommitment,
+      signingKeyId: 'ML-DSA-65-V1',
+      signature,
+      timestamp
     });
 
     const event = await fabricService.getEvent(eventId);

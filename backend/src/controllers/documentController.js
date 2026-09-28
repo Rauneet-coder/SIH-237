@@ -38,14 +38,32 @@ async function uploadDocument(req, res, next) {
       return res.status(400).json({ error: 'A file attachment or fileContent is required.' });
     }
 
+    const classification = (req.body.classification || 'CONFIDENTIAL').toUpperCase();
+    const VALID_CLASSIFICATIONS = ['UNCLASSIFIED', 'RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'];
+    if (!VALID_CLASSIFICATIONS.includes(classification)) {
+      return res.status(400).json({
+        error: `Invalid classification level: ${classification}. Must be one of ${VALID_CLASSIFICATIONS.join(', ')}`
+      });
+    }
+
+    const validFrom = req.body.validFrom || null;
+    const validUntil = req.body.validUntil || null;
+
     const document = await documentService.uploadAndEncryptDocument({
       title,
       fileBuffer,
       fileName,
       mimeType,
       senderId: req.user._id,
-      recipientIds
+      recipientIds,
+      classification,
+      validFrom,
+      validUntil
     });
+
+    const recipientCount = (document.recipientKeys && document.recipientKeys.length > 0)
+      ? document.recipientKeys.length
+      : (document.keyEnvelopes ? Math.max(0, document.keyEnvelopes.length - 1) : 0);
 
     return res.status(201).json({
       message: 'Document encrypted and distributed successfully.',
@@ -56,7 +74,10 @@ async function uploadDocument(req, res, next) {
         fileSize: document.fileSize,
         fileHash: document.fileHash,
         mimeType: document.mimeType,
-        recipientCount: document.recipientKeys.length,
+        classification: document.classification,
+        validFrom: document.validFrom,
+        validUntil: document.validUntil,
+        recipientCount,
         createdAt: document.createdAt
       }
     });
@@ -74,11 +95,15 @@ async function listDocuments(req, res, next) {
 
     // Investigators and admins can view all documents, normal users view their sent or received documents
     let query;
-    if (['admin', 'investigator'].includes(req.user.role)) {
+    if (['admin', 'investigator', 'ADMIN', 'INVESTIGATOR'].includes(req.user.role)) {
       query = {};
     } else {
       query = {
-        $or: [{ senderId: userId }, { 'recipientKeys.recipientId': userId }]
+        $or: [
+          { senderId: userId },
+          { 'recipientKeys.recipientId': userId },
+          { 'keyEnvelopes.recipientId': userId.toString() }
+        ]
       };
     }
 
@@ -115,11 +140,18 @@ async function getDocument(req, res, next) {
     const recipientKey = document.recipientKeys.find((rk) =>
       rk.recipientId._id ? rk.recipientId._id.equals(req.user._id) : rk.recipientId.equals(req.user._id)
     );
-    const isPrivileged = ['admin', 'investigator'].includes(req.user.role);
+    const hasPqcEnvelope = document.keyEnvelopes && document.keyEnvelopes.some((ke) =>
+      ke.recipientId === req.user._id.toString()
+    );
+    const isPrivileged = ['admin', 'investigator', 'ADMIN', 'INVESTIGATOR'].includes(req.user.role);
 
-    if (!isSender && !recipientKey && !isPrivileged) {
+    if (!isSender && !recipientKey && !hasPqcEnvelope && !isPrivileged) {
       return res.status(403).json({ error: 'Access denied: not authorized to view this document.' });
     }
+
+    const recipientCount = (document.keyEnvelopes && document.keyEnvelopes.length > 0)
+      ? document.keyEnvelopes.length
+      : (document.recipientKeys ? document.recipientKeys.length : 0);
 
     return res.json({
       document: {
@@ -130,8 +162,9 @@ async function getDocument(req, res, next) {
         fileHash: document.fileHash,
         mimeType: document.mimeType,
         sender: document.senderId,
-        recipientCount: document.recipientKeys.length,
+        recipientCount,
         myEncryptedKey: recipientKey ? recipientKey.encryptedSymmetricKey : null,
+        hasPqcEnvelope: !!hasPqcEnvelope,
         createdAt: document.createdAt
       }
     });

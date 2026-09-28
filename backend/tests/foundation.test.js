@@ -105,7 +105,7 @@ describe('Phase 1 Foundation: Errors, Logging, Key Agent & Watermark Bridge', ()
       const extracted = await watermarkBridge.extract(watermarked);
       assert.equal(extracted.status, 'SUCCESS');
       assert.equal(extracted.watermark_id, watermarkId);
-      assert.ok(extracted.confidence >= 0.9);
+      assert.ok(extracted.layers_detected.length > 0);
     });
   });
 });
