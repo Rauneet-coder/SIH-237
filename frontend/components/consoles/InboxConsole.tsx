@@ -204,7 +204,14 @@ export function InboxConsole() {
   };
 
   // Close & Lock Active Viewer
-  const handleLockViewer = () => {
+  const handleLockViewer = async () => {
+    if (activeSession?.sessionId && token) {
+      try {
+        await api.closeSession(activeSession.sessionId, token);
+      } catch (err) {
+        console.warn('Failed to notify server of session close:', err);
+      }
+    }
     if (activeSession?.blobUrl) {
       URL.revokeObjectURL(activeSession.blobUrl);
     }

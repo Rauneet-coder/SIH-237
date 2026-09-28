@@ -27,6 +27,9 @@ export interface DocumentMeta {
   fileSize: number;
   fileHash: string;
   mimeType: string;
+  classification?: string;
+  validFrom?: string;
+  validUntil?: string;
   senderId: User;
   recipientKeys: RecipientKeyEntry[];
   recipientCount?: number;
@@ -290,6 +293,31 @@ export const api = {
     }
     return await res.blob();
   },
+
+  closeSession: (sessionId: string, token: string) =>
+    request<{ success: boolean; sessionId: string; status: string; message: string }>(`/sessions/${sessionId}/close`, {
+      method: 'POST'
+    }, token),
+
+  // Forensic Investigation & Leak Verification
+  extractWatermark: (formData: FormData, token: string) =>
+    request<{ success: boolean; extraction: any }>('/forensics/extract', {
+      method: 'POST',
+      body: formData
+    }, token),
+
+  verifyForensicEvidence: (payload: { watermarkId?: string; watermarkCommitment?: string; eventId?: string; documentHash?: string }, token: string) =>
+    request<{ success: boolean; verification: any }>('/forensics/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }, token),
+
+  investigateLeak: (formData: FormData, token: string) =>
+    request<{ success: boolean; extraction: any; verification: any }>('/forensics/investigate', {
+      method: 'POST',
+      body: formData
+    }, token),
 
   // Device Binding
   registerDevice: (payload: { deviceId: string; deviceFingerprint: string; platform?: string }, token: string) =>
