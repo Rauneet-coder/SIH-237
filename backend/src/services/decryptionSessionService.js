@@ -9,6 +9,7 @@ const fingerprintService = require('./fingerprintService');
 const canonicalEventService = require('./canonicalEventService');
 const provenanceService = require('./provenanceService');
 const fabricService = require('./fabricService');
+const fileVaultService = require('./fileVaultService');
 const {
   NotFoundError,
   AuthorizationError,
@@ -160,9 +161,10 @@ const decryptionSessionService = {
         documentHash: document.fileHash
       });
 
-      // Decrypt document with AES-256-GCM
+      // Decrypt document with AES-256-GCM (load from file vault or fallback to database)
+      const ciphertextBuffer = fileVaultService.loadCiphertext(document);
       decryptedPlaintext = cryptoService.decryptDocument(
-        document.encryptedBlob,
+        ciphertextBuffer,
         rawDek,
         document.iv,
         document.authTag

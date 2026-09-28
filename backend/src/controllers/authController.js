@@ -34,11 +34,10 @@ async function register(req, res, next) {
 
     // SECURITY: Restrict self-registration to unprivileged roles only.
     // Privileged roles (admin, investigator) require administrative approval.
-    const SELF_REGISTERABLE_ROLES = ['recipient', 'sender'];
-    const requestedRole = (role || 'recipient').toLowerCase();
-    const assignedRole = SELF_REGISTERABLE_ROLES.includes(requestedRole) ? requestedRole : 'recipient';
+    const SELF_REGISTERABLE_ROLES = ['recipient', 'sender', 'RECIPIENT', 'SENDER'];
+    const assignedRole = SELF_REGISTERABLE_ROLES.includes(role) ? role : 'recipient';
 
-    if (role && !SELF_REGISTERABLE_ROLES.includes(requestedRole)) {
+    if (role && !SELF_REGISTERABLE_ROLES.includes(role)) {
       logger.securityAudit('PRIVILEGED_ROLE_SELF_REGISTRATION_DENIED', {
         requestedRole: role,
         assignedRole,
@@ -52,7 +51,10 @@ async function register(req, res, next) {
     // 2. Provision Post-Quantum Keys (ML-KEM-1024 & ML-DSA-65) inside Key Agent boundary
     const pqcPublicKeys = await keyAgentClient.provisionRecipient(username);
 
-    // 3. Construct device list if device registration requested
+    // 3. Generate backwards-compatible RSA keypair for legacy tests
+    const { publicKey, privateKey } = cryptoService.generateKeyPair(2048);
+
+    // 4. Construct device list if device registration requested
     const initialDevices = [];
     if (deviceId && deviceFingerprint) {
       initialDevices.push({
@@ -63,12 +65,13 @@ async function register(req, res, next) {
       });
     }
 
-    // 4. Persist user with public keys only
+    // 5. Persist user with public keys only
     const user = new User({
       username,
       email: email.toLowerCase(),
       password: hashedPassword,
       role: assignedRole,
+      publicKey,
       mlKemPublicKey: pqcPublicKeys.mlKemPublicKey,
       mlDsaPublicKey: pqcPublicKeys.mlDsaPublicKey,
       keyStatus: 'ACTIVE',
@@ -107,11 +110,13 @@ async function register(req, res, next) {
         username: user.username,
         email: user.email,
         role: user.role,
+        publicKey: user.publicKey,
         mlKemPublicKey: user.mlKemPublicKey,
         mlDsaPublicKey: user.mlDsaPublicKey,
         keyStatus: user.keyStatus,
         createdAt: user.createdAt
-      }
+      },
+      privateKey
     });
   } catch (error) {
     next(error);

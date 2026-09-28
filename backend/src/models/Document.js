@@ -98,6 +98,10 @@ const documentSchema = new mongoose.Schema(
       type: String,
       required: true // 16-byte GCM authentication tag (Hex)
     },
+    storagePath: {
+      type: String,
+      default: null // Relative filesystem path in encrypted vault
+    },
     classification: {
       type: String,
       enum: ['RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'],

@@ -116,6 +116,7 @@ class FabricService {
       documentHash: eventData.documentHash,
       recipientId: eventData.recipientId.toString(),
       sessionId: eventData.sessionId,
+      deviceId: eventData.deviceId || '',
       watermarkId: eventData.watermarkId,
       watermarkCommitment: eventData.watermarkCommitment,
       signingKeyId: eventData.signingKeyId || 'ML-DSA-65-V1',

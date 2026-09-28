@@ -50,14 +50,13 @@ function Workspace() {
     const password = String(d.get("password"));
     try {
       if (mode === "register") {
-        setKey(
-          await register(
-            username,
-            String(d.get("email")),
-            password,
-            String(d.get("role")),
-          ),
+        const regKey = await register(
+          username,
+          String(d.get("email")),
+          password,
+          String(d.get("role")),
         );
+        if (regKey) setKey(regKey);
         setKeyName(username);
       }
       await login(username, password);

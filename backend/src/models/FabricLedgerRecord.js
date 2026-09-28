@@ -38,6 +38,10 @@ const fabricLedgerRecordSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    deviceId: {
+      type: String,
+      default: ''
+    },
     watermarkId: {
       type: String,
       required: true,

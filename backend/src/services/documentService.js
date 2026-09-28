@@ -4,6 +4,7 @@ const User = require('../models/User');
 const cryptoService = require('./cryptoService');
 const keyEnvelopeService = require('./keyEnvelopeService');
 const keyAgentClient = require('./keyAgentClient');
+const fileVaultService = require('./fileVaultService');
 const provenanceService = require('./provenanceService');
 const collusionService = require('./collusionService');
 const logger = require('../utils/logger');
@@ -39,7 +40,8 @@ async function uploadAndEncryptDocument({
 
   // 1. Calculate plaintext SHA-256 hash (canonical binding)
   const fileHash = cryptoService.computeHash(fileBuffer);
-  const documentId = `DOC-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  // High-entropy 16 hex char (8 byte) document identifier per HLD 1.1
+  const documentId = `DOC-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
 
   // 2. Fetch and validate recipients
   const recipients = await User.find({ _id: { $in: recipientIds }, isActive: true }).exec();
@@ -107,7 +109,15 @@ async function uploadAndEncryptDocument({
   // 5. SECURE ZEROIZATION: Purge plaintext DEK from volatile memory
   symmetricKey.fill(0);
 
-  // 6. Store document record
+  // 6. Persist ciphertext to isolated filesystem vault (HLD 2.6)
+  let storagePath = null;
+  try {
+    storagePath = fileVaultService.storeCiphertext(documentId, encryptedBlob);
+  } catch (vaultErr) {
+    logger.warn(`Could not store to filesystem vault, falling back to database: ${vaultErr.message}`);
+  }
+
+  // 7. Store document record
   const document = new Document({
     documentId,
     title,
@@ -119,6 +129,7 @@ async function uploadAndEncryptDocument({
     encryptedBlob,
     iv,
     authTag,
+    storagePath,
     classification,
     recipientKeys,
     keyEnvelopes

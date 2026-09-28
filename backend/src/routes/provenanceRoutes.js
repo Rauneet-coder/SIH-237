@@ -7,11 +7,11 @@ const { authenticate, authorizeRoles } = require('../middleware/auth');
 router.get('/verify', provenanceController.verifyProvenanceChain);
 router.get('/server-key', provenanceController.getServerPublicKey);
 
-// Authenticated provenance query endpoint: admin, investigator, auditor
+// Authenticated provenance query endpoint: admin, investigator, auditor, sender
 router.get(
   '/logs',
   authenticate,
-  authorizeRoles('ADMIN', 'INVESTIGATOR', 'AUDITOR'),
+  authorizeRoles('ADMIN', 'INVESTIGATOR', 'AUDITOR', 'SENDER', 'DOCUMENT_OWNER'),
   provenanceController.listLogs
 );
 

@@ -84,6 +84,24 @@ export interface TraitorTracingReport {
   analysisTimestamp: string;
 }
 
+export interface PrepareSessionResponse {
+  success: boolean;
+  status: string;
+  sessionId: string;
+  watermarkId: string;
+  watermarkCommitment: string;
+  eventDigest: string;
+  signature: string;
+  ledgerTxId: string;
+}
+
+export interface DecryptionSessionResponse {
+  success: boolean;
+  sessionId: string;
+  status: string;
+  expiresAt: string;
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}, token?: string | null): Promise<T> {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> || {})
@@ -118,15 +136,15 @@ async function request<T>(endpoint: string, options: RequestInit = {}, token?: s
 
 export const api = {
   // Auth
-  login: (credentials: { username?: string; email?: string; password: string }) =>
+  login: (credentials: { username?: string; email?: string; password: string; deviceId?: string; deviceFingerprint?: string }) =>
     request<{ token: string; user: User }>('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials)
     }),
 
-  register: (payload: { username: string; email: string; password: string; role?: string }) =>
-    request<{ message: string; user: User; privateKey: string }>('/auth/register', {
+  register: (payload: { username: string; email: string; password: string; role?: string; deviceId?: string; deviceFingerprint?: string; platform?: string }) =>
+    request<{ message: string; user: User; privateKey?: string }>('/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -205,5 +223,82 @@ export const api = {
     request<{ report: VerificationReport; serverPublicKey: string }>('/provenance/verify'),
 
   getServerPublicKey: () =>
-    request<{ serverPublicKey: string; algorithm: string }>('/provenance/server-key')
+    request<{ serverPublicKey: string; algorithm: string }>('/provenance/server-key'),
+
+  // Decryption Sessions (Post-Quantum Fail-Closed Pipeline)
+  createSession: (documentId: string, deviceId: string, token: string) =>
+    request<{ success: boolean; sessionId: string; status: string; expiresAt: string }>('/sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-device-id': deviceId
+      },
+      body: JSON.stringify({ documentId, deviceId })
+    }, token),
+
+  prepareSession: (sessionId: string, deviceId: string, token: string) =>
+    request<{
+      success: boolean;
+      status: string;
+      sessionId: string;
+      watermarkId: string;
+      watermarkCommitment: string;
+      eventDigest: string;
+      signature: string;
+      ledgerTxId: string;
+    }>(`/sessions/${sessionId}/prepare`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-device-id': deviceId
+      },
+      body: JSON.stringify({ deviceId })
+    }, token),
+
+  getSessionStatus: (sessionId: string, token: string) =>
+    request<{
+      success: boolean;
+      session: {
+        sessionId: string;
+        documentId: string;
+        recipientId: string;
+        status: string;
+        watermarkId?: string;
+        watermarkCommitment?: string;
+        ledgerTxId?: string;
+        startedAt: string;
+        expiresAt: string;
+        failureReason?: string;
+      };
+    }>(`/sessions/${sessionId}/status`, {}, token),
+
+  renderSessionDocument: async (sessionId: string, deviceId: string, token: string): Promise<Blob> => {
+    const res = await fetch(`${API_BASE_URL}/sessions/${sessionId}/render`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'x-device-id': deviceId
+      }
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      let errMsg = `HTTP ${res.status}: Failed to render document`;
+      try {
+        const errObj = JSON.parse(errText);
+        errMsg = errObj.error || errMsg;
+      } catch {}
+      throw new Error(errMsg);
+    }
+    return await res.blob();
+  },
+
+  // Device Binding
+  registerDevice: (payload: { deviceId: string; deviceFingerprint: string; platform?: string }, token: string) =>
+    request<{ success: boolean; device: any }>('/auth/devices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }, token),
+
+  listDevices: (token: string) =>
+    request<{ success: boolean; devices: any[] }>('/auth/devices', {}, token)
 };

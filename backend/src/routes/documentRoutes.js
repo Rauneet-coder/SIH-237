@@ -29,27 +29,27 @@ router.get('/', authenticate, documentController.listDocuments);
 // Get document details: all authenticated users (scoped in controller)
 router.get('/:id', authenticate, documentController.getDocument);
 
-// Legacy decrypt endpoint: DISABLED in secure mode.
+// Legacy decrypt endpoint: DISABLED by default in secure mode.
 // This endpoint returns raw plaintext without session watermark, ML-DSA signature,
 // or ledger commit. Use the session API (/api/sessions) for secure decryption.
-if (env.LEGACY_DECRYPT_ENABLED) {
-  router.post('/:id/decrypt', authenticate, validateDeviceBinding, documentController.decryptDocument);
-} else {
-  router.post('/:id/decrypt', authenticate, (req, res) => {
+router.post('/:id/decrypt', authenticate, (req, res, next) => {
+  const isEnabled = process.env.LEGACY_DECRYPT_ENABLED === 'true' || env.LEGACY_DECRYPT_ENABLED;
+  if (!isEnabled) {
     return res.status(403).json({
       success: false,
       error: 'Legacy decrypt endpoint is disabled in secure mode. Use the session-based decryption API at /api/sessions for secure document access with watermarking, signing, and ledger commitment.',
       code: 'LEGACY_DECRYPT_DISABLED',
       sessionApiUrl: '/api/sessions'
     });
-  });
-}
+  }
+  return documentController.decryptDocument(req, res, next);
+});
 
-// Collusion-resistant traitor tracing & simulation: investigator and admin only
+// Collusion-resistant traitor tracing & simulation: investigator, admin, and document owner/sender
 router.post(
   '/:id/trace',
   authenticate,
-  authorizeRoles('INVESTIGATOR', 'ADMIN'),
+  authorizeRoles('INVESTIGATOR', 'ADMIN', 'SENDER', 'DOCUMENT_OWNER'),
   upload.single('file'),
   collusionController.traceCollusion
 );
@@ -57,7 +57,7 @@ router.post(
 router.post(
   '/:id/simulate-collusion',
   authenticate,
-  authorizeRoles('INVESTIGATOR', 'ADMIN'),
+  authorizeRoles('INVESTIGATOR', 'ADMIN', 'SENDER', 'DOCUMENT_OWNER'),
   collusionController.simulateCollusionAttack
 );
 

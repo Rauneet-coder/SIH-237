@@ -38,7 +38,8 @@ const userSchema = new mongoose.Schema(
     // Legacy RSA-2048 Public Key (SPKI PEM)
     publicKey: {
       type: String,
-      required: true
+      required: false,
+      default: null
     },
     privateKeyReference: {
       type: String,

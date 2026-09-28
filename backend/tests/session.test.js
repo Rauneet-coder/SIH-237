@@ -81,6 +81,16 @@ describe('Phase 4 & 5: Forensic Fingerprinting, Canonical Events & Fail-Closed S
       keyStatus: 'ACTIVE'
     });
 
+    const Device = require('../src/models/Device');
+    await Device.deleteMany({});
+    await Device.create({
+      userId: recipient._id,
+      deviceId: 'DEV-COLONEL-SECURE',
+      deviceFingerprint: 'colonel-secure-fingerprint',
+      platform: 'linux',
+      status: 'ACTIVE'
+    });
+
     intruder = await User.create({
       username: 'intruder_agent',
       email: 'intruder@external.org',
