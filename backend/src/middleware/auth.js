@@ -84,13 +84,19 @@ function authorizeRoles(...roles) {
 
 /**
  * Middleware to validate device binding for decryption and high-security endpoints
+ * Strictly requires an enrolled, active device and an active user key status.
  */
 async function validateDeviceBinding(req, res, next) {
   try {
-    const deviceId = req.headers['x-device-id'] || req.body.deviceId;
+    const deviceId = req.headers['x-device-id'] || req.body?.deviceId || req.query?.deviceId;
     if (!deviceId) {
-      // Device binding is required for security-sensitive operations
-      return next();
+      throw new AuthorizationError(
+        'Device ID is required. Provide x-device-id header or deviceId parameter.'
+      );
+    }
+
+    if (req.user && req.user.keyStatus === 'REVOKED') {
+      throw new AuthorizationError('Cryptographic keys for this account have been revoked.');
     }
 
     const device = await Device.findOne({
@@ -120,6 +126,7 @@ async function validateDeviceBinding(req, res, next) {
     device.lastSeenAt = new Date();
     await device.save();
 
+    req.deviceId = deviceId;
     req.device = device;
     next();
   } catch (error) {

@@ -27,12 +27,31 @@ router.post('/devices/verify', authenticate, authController.verifyDeviceChalleng
 // Key lifecycle & revocation routes
 router.post('/keys/revoke', authenticate, authController.revokeKey);
 
-// Admin-only role management
+// Admin-only role and clearance management
 router.post(
   '/users/:userId/role',
   authenticate,
   authorizeRoles('ADMIN'),
   authController.updateUserRole
+);
+router.patch(
+  '/users/:userId/role',
+  authenticate,
+  authorizeRoles('ADMIN'),
+  authController.updateUserRole
+);
+
+router.post(
+  '/users/:userId/clearance',
+  authenticate,
+  authorizeRoles('ADMIN'),
+  authController.updateUserClearance
+);
+router.patch(
+  '/users/:userId/clearance',
+  authenticate,
+  authorizeRoles('ADMIN'),
+  authController.updateUserClearance
 );
 
 // Admin-only user listing
