@@ -86,3 +86,116 @@
 - Camera/scan resilience marked as experimental until measured evaluation dataset exists.
 
 **Consequence:** Watermark extraction confidence will initially be lower for transformed documents. Claims are bounded by actual measurements.
+
+---
+
+## ADR-006: Key-Agent Daemon Authentication and Encrypted File Custody
+
+**Date:** 2026-09-28  
+**Status:** DECIDED  
+**Decision:** AES-256-GCM encrypted keystore file with 0600 permissions and HMAC-SHA256 authenticated HTTP daemon
+
+**Context:** The Key Agent daemon (`key-agent-server.js`) had declared `HMAC_SECRET` but all endpoints were unauthenticated. Private keys lived in volatile memory (`Map()`), wiping all keys on process restart while MongoDB retained public keys. Provisioning could silently overwrite existing keys, and client fell back to in-process memory.
+
+**Resolution:**  
+- Implement HMAC-SHA256 request authentication covering `timestamp`, `nonce`, `method`, `path`, `recipientId`, and payload `bodyHash`.
+- Enforce 60-second timestamp freshness window and sliding replay nonce cache.
+- Private keys persisted on the Key Agent host in `storage/key-agent-keystore/keystore.enc`, encrypted with AES-256-GCM using a daemon master key file with POSIX `0600` permissions.
+- Disallow silent in-process fallback when `KEY_AGENT_SECURE_MODE=true` (fail-closed if daemon is unreachable).
+- Make `/provision` idempotent: return existing public keys if already provisioned, block unauthorized overwrites. Add explicit `/rotate` and `/revoke` endpoints.
+
+**Consequence:** Keystore survives restarts. Private keys never leave the daemon. Daemon rejects forged or replayed requests.
+
+---
+
+## ADR-007: Least-Privilege Enrollment and Clearance Governance
+
+**Date:** 2026-09-28  
+**Status:** DECIDED  
+**Decision:** Default `RESTRICTED` clearance, explicit sender approval, first-admin bootstrap
+
+**Context:** `User.js` had defaulted `clearance` to `TOP_SECRET` as a developer convenience. Self-registration allowed claiming `sender` or `admin` roles, and re-registration could reactivate revoked devices.
+
+**Resolution:**  
+- Default `clearance` changed to `RESTRICTED` (least privilege).
+- Public registration allows only role `recipient`. Senders and admins must be promoted by an existing administrator.
+- First administrator bootstrap: If `User.countDocuments() === 0`, initial user is created as `admin` with `TOP_SECRET` clearance.
+- Add `PATCH /api/auth/users/:userId/clearance` and `PATCH /api/auth/users/:userId/role` with audit logging.
+- Prohibit re-registration or activation of devices in `REVOKED` state.
+- Provide `audit-clearances.js` review script for operators to audit historical accounts.
+
+**Consequence:** Tests requiring elevated clearance must explicitly create accounts with required clearance or promote them.
+
+---
+
+## ADR-008: Cryptographic Device Proof & Continuous Release Enforcement
+
+**Date:** 2026-09-28  
+**Status:** DECIDED  
+**Decision:** Bound challenge-response proof, strict device identity verification on prepare and render, server-side session closure
+
+**Context:** `authController.js` failed device challenges due to missing `node:crypto` import. Fingerprint was used as HMAC secret. Missing device header was allowed. Render did not verify device identity or recheck key revocation. There was no server-side viewer lock/close endpoint.
+
+**Resolution:**  
+- Fix `node:crypto` import.
+- Issue cryptographic challenges bound to `(userId, deviceId, purpose, sessionId, expiry)`.
+- Enforce one-time consumption with 2-minute expiration.
+- Reject missing or mismatched device headers at middleware and service layers.
+- In `getSessionDocument()` (render), verify that the requesting device exactly matches the session's enrolled device, recheck key status (not `REVOKED`), and verify the document's access window.
+- Add `POST /api/sessions/:sessionId/close` endpoint invoked when user locks viewer or navigates away.
+
+**Consequence:** Device hijacking, session replay across devices, and rendering after key revocation are blocked.
+
+---
+
+## ADR-009: Fail-Closed Watermarking and Capability Disclosures
+
+**Date:** 2026-09-28  
+**Status:** DECIDED  
+**Decision:** Fail-closed document release if watermark generation fails; honest capability disclosures
+
+**Context:** `watermarkBridge.js` silently appended a plaintext comment `% SIH237_FORENSIC_TAG:...` if the Python watermarking service failed, releasing unwatermarked documents. Hardcoded PSNR (42.5 dB) and SSIM (0.985) metrics were returned.
+
+**Resolution:**  
+- When `WATERMARK_REQUIRED=true` (production default), watermark service failure immediately throws `WatermarkError` and aborts decryption/render (fail-closed).
+- Remove hardcoded PSNR/SSIM/confidence metrics. Replace with measured values or explicit capability status (`DIGITAL_VECTOR_WATERMARKED`, `CAMERA_EXTRACTION_UNVERIFIED`).
+- Explicitly label photo/scan extraction as requiring a physical-distortion testbed before claiming robustness.
+
+**Consequence:** Outages in watermarking prevent unwatermarked document leaks.
+
+---
+
+## ADR-010: Forensic Evidence Attribution & Verification Lineage
+
+**Date:** 2026-09-28  
+**Status:** DECIDED  
+**Decision:** Separate ledger integrity verification from evidence attribution; recompute commitments from authenticated session records
+
+**Context:** Forensic verification checked `length === 64` for watermark commitments and left `documentHashValid=true` when documents were missing. Client-supplied document hashes were trusted. Copying a valid watermark string into an unrelated file could produce false attribution.
+
+**Resolution:**  
+- Distinguish `ledgerSignatureValid` (cryptographic proof that the record is unaltered on ledger) from `attributionVerified` (cryptographic and content binding to the suspect artifact).
+- Recompute watermark commitment using the canonical session event and document ID.
+- Compare normalized structural/content fingerprints between suspect evidence and original source document.
+- If source document or evidence is missing, return `INCONCLUSIVE` or `INVALID`, never `true`.
+- Disclose verification limitations and methodology in all audit reports.
+
+**Consequence:** Forged or copied forensic markers no longer trigger false attribution.
+
+---
+
+## ADR-011: Audit Trail Integrity and Canonical Payload Versioning
+
+**Date:** 2026-09-28  
+**Status:** DECIDED  
+**Decision:** Canonical Payload v2 including `detailsHash`, preserving backward compatibility for v1
+
+**Context:** `provenanceService.js` signed sequence, prevHash, docId, recipientId, action, status, timestamp, but excluded the `details` object (session ID, watermark commitment, device ID, fabricTxId). Tampering with details was undetected by the signature.
+
+**Resolution:**  
+- Define canonical payload v2: `entryHash = SHA256(seq:prevHash:docId:recipientId:action:status:timestamp:detailsHash:v2)`.
+- `detailsHash = SHA256(canonicalStringify(details))`.
+- Backward compatibility: verify historical entries with v1 format if `schemaVersion` is absent or 1.
+- In-memory lock / atomic sequence counter to prevent race conditions in concurrent provenance append.
+
+**Consequence:** Every audit field is cryptographically signed; historical logs remain verifiable.
