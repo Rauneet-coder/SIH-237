@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { WorkspaceShell } from "../components/WorkspaceShell";
+import { ThemeProvider } from "../components/ThemeProvider";
 
 export const metadata: Metadata = {
   title: "Pramaan — Document Provenance Workspace",
@@ -16,8 +18,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script src="/theme.js" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"
@@ -29,7 +32,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="engineering-grid">{children}</body>
+      <body className="engineering-grid">
+        <ThemeProvider>
+          <WorkspaceShell>{children}</WorkspaceShell>
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

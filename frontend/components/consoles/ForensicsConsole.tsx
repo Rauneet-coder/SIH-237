@@ -366,8 +366,8 @@ export function ForensicsConsole() {
                 
                 {/* Status Banner */}
                 {investigationResult.verification.overallStatus === 'ATTRIBUTED' ? (
-                  <div style={{ background: '#f7eae6', border: '1px solid #dfbcb2', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aa493c' }}>
+                  <div style={{ background: 'var(--surface-danger)', border: '1px solid var(--border-danger)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-danger)' }}>
                       <ShieldAlert size={18} />
                       <span className="font-bold text-sm">EVIDENCE CONCLUSIVELY ATTRIBUTED TO RECIPIENT</span>
                     </div>
@@ -376,8 +376,8 @@ export function ForensicsConsole() {
                     </div>
                   </div>
                 ) : investigationResult.verification.overallStatus === 'FRAUD_DETECTED' ? (
-                  <div style={{ background: '#fdf0ed', border: '2px solid #c93b2b', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c93b2b' }}>
+                  <div style={{ background: 'var(--surface-danger)', border: '2px solid var(--status-danger)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-danger)' }}>
                       <AlertTriangle size={18} />
                       <span className="font-bold text-sm">MARKER FRAUD DETECTED: STRUCTURAL MISMATCH</span>
                     </div>
@@ -386,8 +386,8 @@ export function ForensicsConsole() {
                     </div>
                   </div>
                 ) : investigationResult.verification.overallStatus === 'MISMATCH' ? (
-                  <div style={{ background: '#fff5eb', border: '1px solid #f3d1b0', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b45309' }}>
+                  <div style={{ background: 'var(--surface-warning)', border: '1px solid var(--border-warning)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-warning)' }}>
                       <AlertTriangle size={18} />
                       <span className="font-bold text-sm">VERIFICATION MISMATCH</span>
                     </div>
@@ -419,13 +419,13 @@ export function ForensicsConsole() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {investigationResult.verification.ledgerSignatureValid ? (
                         <>
-                          <CheckCircle size={14} style={{ color: '#2e7d32' }} />
-                          <span className="font-mono text-xs font-bold" style={{ color: '#2e7d32' }}>VERIFIED (RSA-SHA256)</span>
+                          <CheckCircle size={14} style={{ color: 'var(--status-success)' }} />
+                          <span className="font-mono text-xs font-bold" style={{ color: 'var(--status-success)' }}>VERIFIED (RSA-SHA256)</span>
                         </>
                       ) : (
                         <>
-                          <XCircle size={14} style={{ color: '#c93b2b' }} />
-                          <span className="font-mono text-xs font-bold" style={{ color: '#c93b2b' }}>INVALID / TAMPERED</span>
+                          <XCircle size={14} style={{ color: 'var(--status-danger)' }} />
+                          <span className="font-mono text-xs font-bold" style={{ color: 'var(--status-danger)' }}>INVALID / TAMPERED</span>
                         </>
                       )}
                     </div>
@@ -443,13 +443,13 @@ export function ForensicsConsole() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {investigationResult.verification.evidenceBindingValid ? (
                         <>
-                          <CheckCircle size={14} style={{ color: '#2e7d32' }} />
-                          <span className="font-mono text-xs font-bold" style={{ color: '#2e7d32' }}>BOUND TO SESSION</span>
+                          <CheckCircle size={14} style={{ color: 'var(--status-success)' }} />
+                          <span className="font-mono text-xs font-bold" style={{ color: 'var(--status-success)' }}>BOUND TO SESSION</span>
                         </>
                       ) : (
                         <>
-                          <XCircle size={14} style={{ color: '#c93b2b' }} />
-                          <span className="font-mono text-xs font-bold" style={{ color: '#c93b2b' }}>BINDING FAILED</span>
+                          <XCircle size={14} style={{ color: 'var(--status-danger)' }} />
+                          <span className="font-mono text-xs font-bold" style={{ color: 'var(--status-danger)' }}>BINDING FAILED</span>
                         </>
                       )}
                     </div>
@@ -622,8 +622,8 @@ export function ForensicsConsole() {
                 
                 {/* Collusion Detected Banner */}
                 {traceResult.report.collusionDetected ? (
-                  <div style={{ background: '#f7eae6', border: '1px solid #dfbcb2', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aa493c' }}>
+                  <div style={{ background: 'var(--surface-danger)', border: '1px solid var(--border-danger)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-danger)' }}>
                       <ShieldAlert size={18} />
                       <span className="font-bold text-sm">TRAITOR(S) IDENTIFIED WITH PROVABLE CONFIDENCE</span>
                     </div>
@@ -633,7 +633,7 @@ export function ForensicsConsole() {
                   </div>
                 ) : (
                   <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#52764a' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-success)' }}>
                       <CheckCircle size={18} />
                       <span className="font-bold text-sm">NO COLLUSION DETECTED</span>
                     </div>
@@ -775,8 +775,8 @@ export function ForensicsConsole() {
 
             {simResult ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ background: '#f7eae6', border: '1px solid #dfbcb2', borderRadius: 'var(--radius-xs)', padding: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aa493c' }}>
+                <div style={{ background: 'var(--surface-danger)', border: '1px solid var(--border-danger)', borderRadius: 'var(--radius-xs)', padding: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-danger)' }}>
                     <ShieldAlert size={16} />
                     <span className="font-bold text-sm">COALITION SUCCESSFULLY UNMASKED</span>
                   </div>

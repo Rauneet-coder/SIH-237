@@ -22,10 +22,13 @@ export interface RecipientKeyEntry {
 export interface DocumentMeta {
   _id: string;
   id?: string;
+  documentId?: string;
   title: string;
   fileName: string;
   fileSize: number;
   fileHash: string;
+  structuralFingerprint?: string;
+  storagePath?: string;
   mimeType: string;
   classification?: string;
   validFrom?: string;
@@ -33,6 +36,7 @@ export interface DocumentMeta {
   senderId: User;
   recipientKeys: RecipientKeyEntry[];
   recipientCount?: number;
+  keyEnvelopes?: Array<{ recipientId: string }>;
   myEncryptedKey?: string;
   createdAt: string;
 }

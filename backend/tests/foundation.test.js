@@ -84,7 +84,7 @@ describe('Phase 1 Foundation: Errors, Logging, Key Agent & Watermark Bridge', ()
     it('should reject decapsulation and signing after key revocation', async () => {
       const recipientId = 'REC-DEFENCE-REVOKED';
       await keyAgentClient.provisionRecipient(recipientId);
-      keyAgentClient.revoke(recipientId);
+      await keyAgentClient.revoke(recipientId);
 
       await assert.rejects(
         () => keyAgentClient.sign(recipientId, Buffer.from('test')),

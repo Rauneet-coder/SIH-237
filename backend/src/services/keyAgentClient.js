@@ -34,6 +34,11 @@ class KeyAgentStore {
    * @private
    */
   async _callDaemon(endpoint, payload, recipientId = '') {
+    // In unit/integration tests, isolate from any background dev daemon unless explicitly enabled
+    if (process.env.NODE_ENV === 'test' && !process.env.KEY_AGENT_TEST_DAEMON) {
+      return null;
+    }
+
     const timestamp = new Date().toISOString();
     const nonce = crypto.randomUUID();
     const method = payload ? 'POST' : 'GET';
@@ -201,6 +206,9 @@ class KeyAgentStore {
    */
   async decapsulate(recipientId, kemCiphertext, sessionId = null, documentId = null) {
     const entry = this._enclave.get(recipientId);
+    if (entry && entry.status === 'REVOKED') {
+      throw new AuthorizationError(`Key Agent: keys for ${recipientId} are revoked or inactive`);
+    }
 
     // 1. Try out-of-process Key Agent daemon
     if (entry?.isDaemon || this._daemonAvailable !== false) {
@@ -257,6 +265,9 @@ class KeyAgentStore {
   async sign(recipientId, canonicalDigest, sessionId = null, documentId = null, context = null) {
     const digestBuf = Buffer.isBuffer(canonicalDigest) ? canonicalDigest : Buffer.from(canonicalDigest, 'hex');
     const entry = this._enclave.get(recipientId);
+    if (entry && entry.status === 'REVOKED') {
+      throw new AuthorizationError(`Key Agent: keys for ${recipientId} are revoked or inactive`);
+    }
 
     // 1. Try out-of-process Key Agent daemon
     if (entry?.isDaemon || this._daemonAvailable !== false) {
@@ -329,13 +340,17 @@ class KeyAgentStore {
    * Revoke recipient keys in Key Agent
    */
   async revoke(recipientId, reason = 'Unspecified') {
-    const entry = this._enclave.get(recipientId);
+    let entry = this._enclave.get(recipientId);
+    if (!entry) {
+      entry = { status: 'REVOKED', isDaemon: false };
+      this._enclave.set(recipientId, entry);
+    } else {
+      entry.status = 'REVOKED';
+    }
+    logger.securityAudit('KEY_AGENT_REVOCATION', { recipientId, reason });
+
     if (entry?.isDaemon || this._daemonAvailable !== false) {
       await this._callDaemon('/revoke', { recipientId, reason }, recipientId).catch(() => {});
-    }
-    if (entry) {
-      entry.status = 'REVOKED';
-      logger.securityAudit('KEY_AGENT_REVOCATION', { recipientId, reason });
     }
   }
 }

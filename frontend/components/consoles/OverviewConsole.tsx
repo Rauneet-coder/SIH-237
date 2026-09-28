@@ -16,6 +16,7 @@ import {
   ProvenanceLogEntry,
   VerificationReport,
 } from "../../lib/api";
+import { useRouter } from "next/navigation";
 import { ConsoleTab } from "../ConsoleNav";
 
 export function OverviewConsole({
@@ -24,6 +25,7 @@ export function OverviewConsole({
   onNavigate: (tab: ConsoleTab) => void;
 }) {
   const { token } = useAuth();
+  const router = useRouter();
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [logs, setLogs] = useState<ProvenanceLogEntry[]>([]);
   const [report, setReport] = useState<VerificationReport | null>(null);
@@ -37,7 +39,10 @@ export function OverviewConsole({
     try {
       const [d, l, v] = await Promise.all([
         api.listDocuments(token),
-        api.listLogs({ limit: "4" }, token),
+        api.listLogs({ limit: "1" }, token).then(async first => {
+          const recent = first.total > 1 ? await api.listLogs({ limit: "4", skip: String(Math.max(0, first.total - 4)) }, token) : first;
+          return { ...recent, logs: [...recent.logs].reverse() };
+        }),
         api.verifyChain(),
       ]);
       setDocuments(d.documents);
@@ -230,7 +235,7 @@ export function OverviewConsole({
                 <button
                   className="document-row"
                   key={d.id}
-                  onClick={() => onNavigate("inbox")}
+                  onClick={() => preview ? onNavigate("inbox") : router.push(`/documents/${encodeURIComponent(d.id)}`)}
                 >
                   <span className="document-name">
                     <span className="file-icon">

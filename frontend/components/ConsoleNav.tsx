@@ -7,6 +7,7 @@ import {
   Layers3,
   KeyRound,
 } from "lucide-react";
+import Link from "next/link";
 export type ConsoleTab =
   | "overview"
   | "dispatch"
@@ -15,20 +16,23 @@ export type ConsoleTab =
   | "ledger"
   | "vault";
 export const consoleTabs = [
-  { id: "overview", label: "Overview", icon: LayoutGrid },
-  { id: "dispatch", label: "Send document", icon: Send },
-  { id: "inbox", label: "Secure inbox", icon: Inbox },
-  { id: "ledger", label: "Activity ledger", icon: Layers3 },
-  { id: "forensics", label: "Investigations", icon: ScanLine },
-  { id: "vault", label: "Key vault", icon: KeyRound },
+  { id: "overview", href: "/", label: "Overview", icon: LayoutGrid },
+  { id: "dispatch", href: "/send", label: "Send document", icon: Send },
+  { id: "inbox", href: "/inbox", label: "Secure inbox", icon: Inbox },
+  { id: "ledger", href: "/ledger", label: "Activity ledger", icon: Layers3 },
+  {
+    id: "forensics",
+    href: "/investigations",
+    label: "Investigations",
+    icon: ScanLine,
+  },
+  { id: "vault", href: "/keys", label: "Key vault", icon: KeyRound },
 ] as const;
 export function ConsoleNav({
   activeTab,
-  onTabChange,
   logCount = 0,
 }: {
   activeTab: ConsoleTab;
-  onTabChange: (tab: ConsoleTab) => void;
   logCount?: number;
 }) {
   return (
@@ -49,17 +53,17 @@ export function ConsoleNav({
       </div>
       <div className="nav-label">WORKSPACE</div>
       <nav aria-label="Workspace navigation">
-        {consoleTabs.map(({ id, label, icon: Icon }) => (
-          <button
+        {consoleTabs.map(({ id, label, icon: Icon, href }) => (
+          <Link
+            href={href}
             key={id}
             className={`nav-item ${activeTab === id ? "active" : ""}`}
             aria-current={activeTab === id ? "page" : undefined}
-            onClick={() => onTabChange(id)}
           >
             <Icon size={17} strokeWidth={1.6} />
             <span>{label}</span>
             {id === "ledger" && logCount > 0 && <small>{logCount}</small>}
-          </button>
+          </Link>
         ))}
       </nav>
       <div className="sidebar-footer">
