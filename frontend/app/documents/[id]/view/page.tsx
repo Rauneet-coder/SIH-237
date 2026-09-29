@@ -2,7 +2,7 @@ import Link from "next/link";
 import { InboxConsole } from "../../../../components/consoles/InboxConsole";
 export default function Page({ params }: { params: { id: string } }) {
   return (
-    <section className="tool-console">
+    <section className="professional-console tool-console">
       <Link
         className="detail-back"
         href={`/documents/${encodeURIComponent(params.id)}`}

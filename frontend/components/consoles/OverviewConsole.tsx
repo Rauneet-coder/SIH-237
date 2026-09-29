@@ -327,7 +327,7 @@ export function OverviewConsole({
         <span>
           <LockKeyhole size={12} /> Private documents. Accountable access.
         </span>
-        <span>Pramaan · SIH 2026</span>
+        <span>Ledgr.io · SIH 2026</span>
       </div>
     </div>
   );

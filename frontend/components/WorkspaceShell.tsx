@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Download, X } from "lucide-react";
 import { AuthProvider, useAuth, COMMAND_OFFICERS } from "../lib/authContext";
+import { ScrollToTop } from "./ScrollToTop";
 import { Header } from "./Header";
 import { ConsoleNav, ConsoleTab, consoleTabs } from "./ConsoleNav";
 import { usePathname } from "next/navigation";
@@ -55,16 +56,19 @@ function Workspace({ children }: { children: React.ReactNode }) {
   };
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#workspace-content">
+        Skip to content
+      </a>
       <ConsoleNav activeTab={tab} />
       <div className="workspace-main">
         <Header
           title={consoleTabs.find((t) => t.id === tab)?.label || "Overview"}
           onSignIn={openAuth}
         />
-        <main className="main-content">
+        <main id="workspace-content" className="main-content" tabIndex={-1}>
           {tab !== "overview" && !user ? (
             <section className="route-gate">
-              <div className="eyebrow">PRAMAAN WORKSPACE</div>
+              <div className="eyebrow">LEDGR.IO WORKSPACE</div>
               <h1>{consoleTabs.find((t) => t.id === tab)?.label}</h1>
               <p>
                 {isLoading
@@ -82,6 +86,7 @@ function Workspace({ children }: { children: React.ReactNode }) {
           )}
         </main>
       </div>
+      <ScrollToTop />
       <dialog ref={dialog} className="auth-dialog" aria-labelledby="auth-title">
         <button
           className="dialog-close icon-button"

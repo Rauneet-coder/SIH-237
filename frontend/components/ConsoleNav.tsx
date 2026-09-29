@@ -37,14 +37,15 @@ export function ConsoleNav({
 }) {
   return (
     <aside className="sidebar">
-      <a className="brand" href="/" aria-label="Pramaan home">
+      <Link className="brand" href="/" aria-label="Ledgr.io home">
         <span className="brand-symbol">
-          p<span>•</span>
+          <Layers3 size={27} strokeWidth={1.6} />
         </span>
         <span>
-          pramaan<span className="brand-caption">Secure document sharing</span>
+          Ledgr<span className="brand-domain">.io</span>
+          <span className="brand-caption">Secure document sharing</span>
         </span>
-      </a>
+      </Link>
       <div className="workspace-label">
         <span className="workspace-icon">D</span>
         <div>
