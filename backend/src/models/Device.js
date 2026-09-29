@@ -11,7 +11,6 @@ const deviceSchema = new mongoose.Schema(
     deviceId: {
       type: String,
       required: true,
-      unique: true,
       trim: true
     },
     deviceFingerprint: {
@@ -40,5 +39,8 @@ const deviceSchema = new mongoose.Schema(
     timestamps: true
   }
 );
+
+// A workstation can be enrolled independently for multiple authenticated users.
+deviceSchema.index({ userId: 1, deviceId: 1 }, { unique: true });
 
 module.exports = mongoose.model('Device', deviceSchema);

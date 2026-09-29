@@ -25,6 +25,9 @@ import {
 
 export function ForensicsConsole() {
   const { token } = useAuth();
+  const [documentError, setDocumentError] = useState('');
+  const [documentLoading, setDocumentLoading] = useState(true);
+  const [reloadDocuments, setReloadDocuments] = useState(0);
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'investigate' | 'trace' | 'simulate'>('investigate');
@@ -80,20 +83,19 @@ export function ForensicsConsole() {
   const [simError, setSimError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadDocs() {
-      if (!token) return;
-      try {
-        const res = await api.listDocuments(token);
-        setDocuments(res.documents || []);
-        if (res.documents.length > 0 && !selectedDocId) {
-          setSelectedDocId(res.documents[0]._id || res.documents[0].id!);
-        }
-      } catch (err) {
-        console.error('Failed to load documents:', err);
-      }
-    }
-    loadDocs();
-  }, [token, selectedDocId]);
+    let active = true;
+    if (!token) return;
+    setDocumentLoading(true);
+    setDocumentError('');
+    api.listDocuments(token).then(res => {
+      if (!active) return;
+      setDocuments(res.documents || []);
+      setSelectedDocId(current => current || res.documents[0]?._id || res.documents[0]?.id || '');
+    }).catch(error => {
+      if (active) setDocumentError(error instanceof Error ? error.message : 'Unable to load documents.');
+    }).finally(() => { if (active) setDocumentLoading(false); });
+    return () => { active = false; };
+  }, [token, reloadDocuments]);
 
   const selectedDoc = documents.find((d) => (d._id || d.id) === selectedDocId);
 
@@ -208,43 +210,47 @@ export function ForensicsConsole() {
             <span className="badge badge-white">FORENSIC ATTRIBUTION ENGINE</span>
             <span className="badge">IMMUTABLE EVIDENCE VERIFICATION</span>
           </div>
-          <h1 className="text-xl font-bold">Forensic Attribution & Traitor Tracing Suite</h1>
+          <h1 className="text-xl font-bold">Evidence analysis</h1>
           <p className="text-secondary text-sm" style={{ marginTop: '2px' }}>
-            Verify evidence attribution against tamper-evident ledger records and unmask leaking recipients with mathematical certainty.
+            Compare recovered evidence with recorded document activity. Review the verification results and limitations before drawing conclusions.
           </p>
         </div>
 
         {/* Mode Switcher Tabs */}
         <div style={{ display: 'flex', gap: '6px', background: 'var(--bg-secondary)', padding: '4px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-medium)' }}>
           <button
-            onClick={() => setActiveTab('investigate')}
+            aria-pressed={activeTab === 'investigate'} onClick={() => setActiveTab('investigate')}
             className={`btn btn-sm ${activeTab === 'investigate' ? 'btn-primary' : 'btn-secondary'}`}
           >
             <Fingerprint size={12} />
-            <span>LEAK INVESTIGATION</span>
+            <span>Investigate evidence</span>
           </button>
           <button
-            onClick={() => setActiveTab('trace')}
+            aria-pressed={activeTab === 'trace'} onClick={() => setActiveTab('trace')}
             className={`btn btn-sm ${activeTab === 'trace' ? 'btn-primary' : 'btn-secondary'}`}
           >
             <Search size={12} />
-            <span>TARDOS TRACER</span>
+            <span>Trace recipients</span>
           </button>
           <button
-            onClick={() => setActiveTab('simulate')}
+            aria-pressed={activeTab === 'simulate'} onClick={() => setActiveTab('simulate')}
             className={`btn btn-sm ${activeTab === 'simulate' ? 'btn-primary' : 'btn-secondary'}`}
           >
             <Zap size={12} />
-            <span>COLLUSION SIMULATOR</span>
+            <span>Simulation lab</span>
           </button>
         </div>
       </div>
 
+      {documentError && <div className="inline-error" role="alert">{documentError} <button onClick={() => setReloadDocuments(n => n + 1)}>Retry loading documents</button></div>}
+      {activeTab === 'simulate' && <div className="simulation-notice"><strong>Simulation lab</strong><p>Uses synthetic watermark combinations to explore tracing behavior. Simulation results are not evidence of an actual leak.</p></div>}
       {/* Target Document Selector */}
       <div className="card" style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span className="input-label" style={{ marginBottom: 0 }}>Reference Document:</span>
           <select
+            aria-label="Reference document"
+            disabled={documentLoading}
             value={selectedDocId}
             onChange={(e) => {
               setSelectedDocId(e.target.value);
@@ -280,7 +286,7 @@ export function ForensicsConsole() {
           {/* Left: Investigation Intake Form */}
           <div className="card">
             <div className="uppercase-track text-muted" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px', marginBottom: '16px' }}>
-              Suspect Evidence Intake
+              Evidence to investigate
             </div>
 
             {investigationError && (
@@ -292,9 +298,9 @@ export function ForensicsConsole() {
 
             <form onSubmit={handleInvestigate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div className="input-group">
-                <label className="input-label">Suspect Leaked Document / Exfiltrated File</label>
+                <label className="input-label">Recovered document</label>
                 <input
-                  type="file"
+                  aria-label="Recovered document" type="file"
                   onChange={(e) => setInvestigateFile(e.target.files?.[0] || null)}
                   className="input-text"
                 />
@@ -305,7 +311,7 @@ export function ForensicsConsole() {
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '4px 0' }}>
                 <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
-                <span className="text-xs text-muted font-mono uppercase">OR SPECIFY KNOWN MARKERS</span>
+                <span className="text-xs text-muted font-mono uppercase">Or use a known watermark</span>
                 <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
               </div>
 
@@ -313,7 +319,7 @@ export function ForensicsConsole() {
                 <label className="input-label">Watermark ID (Optional if file uploaded)</label>
                 <input
                   type="text"
-                  value={investigateWatermarkId}
+                  aria-label="Watermark ID" value={investigateWatermarkId}
                   onChange={(e) => setInvestigateWatermarkId(e.target.value)}
                   placeholder="e.g. WM-2026-..."
                   className="input-text font-mono"
@@ -325,7 +331,7 @@ export function ForensicsConsole() {
                 <label className="input-label">Watermark Commitment (Hex SHA-256)</label>
                 <input
                   type="text"
-                  value={investigateCommitment}
+                  aria-label="Watermark commitment" value={investigateCommitment}
                   onChange={(e) => setInvestigateCommitment(e.target.value)}
                   placeholder="64-character hex commitment"
                   className="input-text font-mono"
@@ -340,14 +346,14 @@ export function ForensicsConsole() {
                 style={{ width: '100%', marginTop: '8px', padding: '12px' }}
               >
                 <Fingerprint size={14} />
-                <span>{isInvestigating ? 'ANALYZING & VERIFYING LINEAGE...' : 'RUN FORENSIC INVESTIGATION'}</span>
+                <span>{isInvestigating ? 'Analyzing evidence…' : 'Analyze evidence'}</span>
               </button>
             </form>
 
             <div style={{ marginTop: '20px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
                 <Info size={13} />
-                <span>Cryptographic Guardrails</span>
+                <span>What this check does</span>
               </div>
               <p className="text-xs text-muted" style={{ marginTop: '4px', lineHeight: 1.5, fontSize: '11px' }}>
                 Verifies both ledger authority signature AND recomputes watermark commitments from authenticated session context. Prevents marker-copying fraud by verifying structural layout integrity.
@@ -366,8 +372,8 @@ export function ForensicsConsole() {
                 
                 {/* Status Banner */}
                 {investigationResult.verification.overallStatus === 'ATTRIBUTED' ? (
-                  <div style={{ background: '#f7eae6', border: '1px solid #dfbcb2', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aa493c' }}>
+                  <div style={{ background: 'var(--surface-danger)', border: '1px solid var(--border-danger)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-danger)' }}>
                       <ShieldAlert size={18} />
                       <span className="font-bold text-sm">EVIDENCE CONCLUSIVELY ATTRIBUTED TO RECIPIENT</span>
                     </div>
@@ -376,8 +382,8 @@ export function ForensicsConsole() {
                     </div>
                   </div>
                 ) : investigationResult.verification.overallStatus === 'FRAUD_DETECTED' ? (
-                  <div style={{ background: '#fdf0ed', border: '2px solid #c93b2b', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c93b2b' }}>
+                  <div style={{ background: 'var(--surface-danger)', border: '2px solid var(--status-danger)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-danger)' }}>
                       <AlertTriangle size={18} />
                       <span className="font-bold text-sm">MARKER FRAUD DETECTED: STRUCTURAL MISMATCH</span>
                     </div>
@@ -386,8 +392,8 @@ export function ForensicsConsole() {
                     </div>
                   </div>
                 ) : investigationResult.verification.overallStatus === 'MISMATCH' ? (
-                  <div style={{ background: '#fff5eb', border: '1px solid #f3d1b0', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b45309' }}>
+                  <div style={{ background: 'var(--surface-warning)', border: '1px solid var(--border-warning)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-warning)' }}>
                       <AlertTriangle size={18} />
                       <span className="font-bold text-sm">VERIFICATION MISMATCH</span>
                     </div>
@@ -419,13 +425,13 @@ export function ForensicsConsole() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {investigationResult.verification.ledgerSignatureValid ? (
                         <>
-                          <CheckCircle size={14} style={{ color: '#2e7d32' }} />
-                          <span className="font-mono text-xs font-bold" style={{ color: '#2e7d32' }}>VERIFIED (RSA-SHA256)</span>
+                          <CheckCircle size={14} style={{ color: 'var(--status-success)' }} />
+                          <span className="font-mono text-xs font-bold" style={{ color: 'var(--status-success)' }}>VERIFIED (RSA-SHA256)</span>
                         </>
                       ) : (
                         <>
-                          <XCircle size={14} style={{ color: '#c93b2b' }} />
-                          <span className="font-mono text-xs font-bold" style={{ color: '#c93b2b' }}>INVALID / TAMPERED</span>
+                          <XCircle size={14} style={{ color: 'var(--status-danger)' }} />
+                          <span className="font-mono text-xs font-bold" style={{ color: 'var(--status-danger)' }}>INVALID / TAMPERED</span>
                         </>
                       )}
                     </div>
@@ -443,13 +449,13 @@ export function ForensicsConsole() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {investigationResult.verification.evidenceBindingValid ? (
                         <>
-                          <CheckCircle size={14} style={{ color: '#2e7d32' }} />
-                          <span className="font-mono text-xs font-bold" style={{ color: '#2e7d32' }}>BOUND TO SESSION</span>
+                          <CheckCircle size={14} style={{ color: 'var(--status-success)' }} />
+                          <span className="font-mono text-xs font-bold" style={{ color: 'var(--status-success)' }}>BOUND TO SESSION</span>
                         </>
                       ) : (
                         <>
-                          <XCircle size={14} style={{ color: '#c93b2b' }} />
-                          <span className="font-mono text-xs font-bold" style={{ color: '#c93b2b' }}>BINDING FAILED</span>
+                          <XCircle size={14} style={{ color: 'var(--status-danger)' }} />
+                          <span className="font-mono text-xs font-bold" style={{ color: 'var(--status-danger)' }}>BINDING FAILED</span>
                         </>
                       )}
                     </div>
@@ -622,8 +628,8 @@ export function ForensicsConsole() {
                 
                 {/* Collusion Detected Banner */}
                 {traceResult.report.collusionDetected ? (
-                  <div style={{ background: '#f7eae6', border: '1px solid #dfbcb2', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aa493c' }}>
+                  <div style={{ background: 'var(--surface-danger)', border: '1px solid var(--border-danger)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-danger)' }}>
                       <ShieldAlert size={18} />
                       <span className="font-bold text-sm">TRAITOR(S) IDENTIFIED WITH PROVABLE CONFIDENCE</span>
                     </div>
@@ -633,7 +639,7 @@ export function ForensicsConsole() {
                   </div>
                 ) : (
                   <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-xs)', padding: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#52764a' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-success)' }}>
                       <CheckCircle size={18} />
                       <span className="font-bold text-sm">NO COLLUSION DETECTED</span>
                     </div>
@@ -690,7 +696,7 @@ export function ForensicsConsole() {
         </div>
       )}
 
-      {/* TAB 3: COLLUSION SIMULATOR */}
+      {/* TAB 3: Simulation lab */}
       {activeTab === 'simulate' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(340px, 1fr)', gap: '24px' }}>
           
@@ -775,8 +781,8 @@ export function ForensicsConsole() {
 
             {simResult ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ background: '#f7eae6', border: '1px solid #dfbcb2', borderRadius: 'var(--radius-xs)', padding: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aa493c' }}>
+                <div style={{ background: 'var(--surface-danger)', border: '1px solid var(--border-danger)', borderRadius: 'var(--radius-xs)', padding: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--status-danger)' }}>
                     <ShieldAlert size={16} />
                     <span className="font-bold text-sm">COALITION SUCCESSFULLY UNMASKED</span>
                   </div>

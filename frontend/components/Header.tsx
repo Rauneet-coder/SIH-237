@@ -1,6 +1,7 @@
 "use client";
-import { ArrowUpRight, LogOut } from "lucide-react";
+import { ArrowUpRight, LogOut, Moon, Sun } from "lucide-react";
 import { useAuth } from "../lib/authContext";
+import { useTheme } from "./ThemeProvider";
 export function Header({
   title,
   onSignIn,
@@ -8,6 +9,7 @@ export function Header({
   title: string;
   onSignIn: () => void;
 }) {
+  const { dark, toggle } = useTheme();
   const { user, logout } = useAuth();
   return (
     <header className="workspace-header">
@@ -15,6 +17,20 @@ export function Header({
         Workspace <span>/</span> <strong>{title}</strong>
       </div>
       <div className="header-right">
+        <button
+          className="theme-toggle"
+          role="switch"
+          aria-checked={dark}
+          aria-label="Dark mode"
+          onClick={toggle}
+          title={dark ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          <Sun size={14} />
+          <span className="theme-track">
+            <span />
+          </span>
+          <Moon size={14} />
+        </button>
         <span className="project-tag">SIH 26237</span>
         {user ? (
           <>

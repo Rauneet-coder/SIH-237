@@ -83,7 +83,7 @@ export function KeyVaultConsole() {
                 className="btn btn-secondary btn-sm"
                 style={{ fontSize: '10px', padding: '3px 8px' }}
               >
-                {copiedUserKey ? <Check size={10} color="#52764a" /> : <Copy size={10} />}
+                {copiedUserKey ? <Check size={10} color="var(--status-success)" /> : <Copy size={10} />}
                 <span>{copiedUserKey ? 'COPIED' : 'COPY'}</span>
               </button>
             </div>
@@ -156,7 +156,7 @@ export function KeyVaultConsole() {
                 className="btn btn-secondary btn-sm"
                 style={{ fontSize: '10px', padding: '3px 8px' }}
               >
-                {copiedServerKey ? <Check size={10} color="#52764a" /> : <Copy size={10} />}
+                {copiedServerKey ? <Check size={10} color="var(--status-success)" /> : <Copy size={10} />}
                 <span>{copiedServerKey ? 'COPIED' : 'COPY'}</span>
               </button>
             </div>

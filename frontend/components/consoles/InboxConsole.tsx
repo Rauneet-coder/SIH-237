@@ -29,7 +29,7 @@ interface PipelineStep {
   status: 'pending' | 'active' | 'success' | 'failed';
 }
 
-export function InboxConsole() {
+export function InboxConsole({ documentId }: { documentId?: string }) {
   const { user, token, cachedPrivateKey, setCachedPrivateKey, quickSwitchUser } = useAuth();
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<DocumentMeta | null>(null);
@@ -48,11 +48,11 @@ export function InboxConsole() {
   } | null>(null);
   const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number | null>(null);
   const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>([
-    { name: 'Identity & Device Gate', desc: 'Validating recipient role and hardware device binding', status: 'pending' },
-    { name: 'ML-KEM-1024 Recovery', desc: 'Key Agent decapsulating shared secret inside isolated boundary', status: 'pending' },
-    { name: 'Forensic Watermarking', desc: 'Deriving opaque recipient fingerprint and watermark commitment', status: 'pending' },
-    { name: 'ML-DSA-65 Ledger Commit', desc: 'Signing canonical audit event and committing to Hyperledger Fabric', status: 'pending' },
-    { name: 'Fail-Closed Release', desc: 'Enforcing cryptographic release gate into ephemeral secure viewer', status: 'pending' }
+    { name: 'Check access', desc: 'Validating recipient role and hardware device binding', status: 'pending' },
+    { name: 'Unlock document', desc: 'Key Agent decapsulating shared secret inside isolated boundary', status: 'pending' },
+    { name: 'Apply watermark', desc: 'Deriving opaque recipient fingerprint and watermark commitment', status: 'pending' },
+    { name: 'Record access', desc: 'Signing canonical audit event and committing to Hyperledger Fabric', status: 'pending' },
+    { name: 'Open viewer', desc: 'Enforcing cryptographic release gate into ephemeral secure viewer', status: 'pending' }
   ]);
 
   // Legacy RSA Decryption State (fallback)
@@ -91,12 +91,14 @@ export function InboxConsole() {
     setLoading(true);
     try {
       const res = await api.listDocuments(token);
-      setDocuments(res.documents || []);
-      if (res.documents.length > 0 && !selectedDoc) {
-        setSelectedDoc(res.documents[0]);
+      const available = documentId ? res.documents.filter(d => (d._id || d.id) === documentId) : res.documents;
+      setDocuments(available);
+      if (documentId && !available.length) setError("This document is unavailable or you do not have access.");
+      if (available.length > 0 && !selectedDoc) {
+        setSelectedDoc(available[0]);
       }
     } catch (err: any) {
-      console.error('Failed to load documents:', err);
+      setError(err instanceof Error ? err.message : 'Unable to load documents.');
     } finally {
       setLoading(false);
     }
@@ -104,7 +106,13 @@ export function InboxConsole() {
 
   useEffect(() => {
     loadDocuments();
-  }, [token]);
+  }, [token, documentId]);
+
+  // Release document URLs when leaving the dedicated viewer.
+  useEffect(() => {
+    const url = activeSession?.blobUrl;
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [activeSession?.blobUrl]);
 
   // Session expiry countdown timer
   useEffect(() => {
@@ -135,6 +143,7 @@ export function InboxConsole() {
   // Execute Complete 5-Stage Post-Quantum Decryption Session Pipeline
   const handleInitiateSession = async () => {
     if (!token || !selectedDoc) return;
+    setPipelineSteps(prev => prev.map(step => ({ ...step, status: "pending" })));
     setIsProcessingSession(true);
     setError(null);
     if (activeSession?.blobUrl) {
@@ -160,17 +169,14 @@ export function InboxConsole() {
 
       // Stage 2 & 3 & 4: Prepare Session (ML-KEM unwrap + Fingerprint + ML-DSA Sign + Fabric Commit)
       setStep(1, 'active');
-      await new Promise((r) => setTimeout(r, 200)); // Visual pacing
-      setStep(2, 'active');
-      await new Promise((r) => setTimeout(r, 200));
-      setStep(3, 'active');
+      setPipelineSteps(prev => prev.map((step, i) => i >= 1 && i <= 3 ? { ...step, status: 'active' } : step));
 
       const prepareRes = await api.prepareSession(sessionRes.sessionId, dev.deviceId, token);
 
       if (prepareRes.status !== 'RELEASED') {
         throw new Error('Fail-Closed security check activated: Session was not granted RELEASED status.');
       }
-      setStep(3, 'success');
+      setPipelineSteps(prev => prev.map((step, i) => i >= 1 && i <= 3 ? { ...step, status: 'success' } : step));
 
       // Stage 5: Fail-Closed Stream Release
       setStep(4, 'active');
@@ -237,10 +243,10 @@ export function InboxConsole() {
     .filter(Boolean);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '24px' }}>
-      
+    <div style={{ display: 'grid', gridTemplateColumns: documentId ? 'minmax(0, 1fr)' : '360px 1fr', gap: '24px' }}>
+
       {/* Left Column: Documents Inbox List */}
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px', height: 'fit-content' }}>
+      {!documentId && <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px', height: 'fit-content' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Inbox size={16} className="text-secondary" />
@@ -326,11 +332,12 @@ export function InboxConsole() {
             })}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Right Column: Decryption Session Pipeline & Secure Viewer */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        
+
+        {!selectedDoc && error && <div className="inline-error" role="alert">{error} <button onClick={loadDocuments}>Try again</button></div>}
         {selectedDoc ? (
           <>
             {/* Document Header & Security Policy */}
@@ -338,9 +345,9 @@ export function InboxConsole() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                    <span className="badge badge-white">POST-QUANTUM ENVELOPE</span>
+                    <span className="badge badge-white">Encrypted document</span>
                     <span className="badge">AES-256-GCM</span>
-                    <span className="badge badge-white">NIST FIPS 203</span>
+
                   </div>
                   <h2 className="text-lg font-bold">{selectedDoc.title}</h2>
                   <div className="font-mono text-xs text-secondary" style={{ marginTop: '4px' }}>
@@ -349,11 +356,11 @@ export function InboxConsole() {
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
-                  <div className="text-xs text-muted">Author / Dispatcher</div>
+                  <div className="text-xs text-muted">Shared by</div>
                   <div className="text-xs font-semibold text-primary">{selectedDoc.senderId?.username || 'Command Dispatcher'}</div>
                   {recipientUsernames.length > 0 && (
                     <div style={{ marginTop: '6px' }}>
-                      <div className="text-xs text-muted">Authorized Recipients</div>
+                      <div className="text-xs text-muted">Recipient identities</div>
                       <div className="font-mono text-xs text-secondary">{recipientUsernames.join(', ')}</div>
                     </div>
                   )}
@@ -373,12 +380,12 @@ export function InboxConsole() {
                     lineHeight: '1.5'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#aa493c', fontWeight: 600, marginBottom: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--status-danger)', fontWeight: 600, marginBottom: '4px' }}>
                     <AlertCircle size={14} />
                     <span>UNAUTHORIZED RECIPIENT IDENTITY</span>
                   </div>
                   <div className="text-secondary">
-                    You are logged in as <span className="font-mono text-primary font-bold">{user?.username}</span>. 
+                    You are logged in as <span className="font-mono text-primary font-bold">{user?.username}</span>.
                     This post-quantum envelope was encapsulated exclusively for: <span className="font-mono text-primary font-bold">{recipientUsernames.join(', ')}</span>.
                   </div>
                   {recipientUsernames.length > 0 && (
@@ -404,21 +411,10 @@ export function InboxConsole() {
                 </div>
               )}
 
-              {/* Security Boundary Notice */}
-              <div style={{ marginTop: '18px', padding: '12px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Cpu size={14} className="text-secondary" />
-                    <span className="text-xs font-semibold text-primary">Cryptographic Custody: Local Key Agent Enclave</span>
-                  </div>
-                  <span className="badge badge-success text-xs" style={{ fontSize: '9px', padding: '1px 6px' }}>
-                    ACTIVE BOUNDARY
-                  </span>
-                </div>
-                <div className="text-xs text-muted" style={{ fontSize: '11px', lineHeight: '1.4' }}>
-                  Private keys never leave the workstation. Decapsulation of ML-KEM-1024 DEKs and ML-DSA-65 digital signing are executed inside the isolated Key Agent process on <span className="font-mono text-primary">localhost:8002</span>. The backend server receives only verifiable public keys, event digests, and digital signatures.
-                </div>
-              </div>
+              <details className="viewer-technical">
+                <summary>How secure access works</summary>
+                <p>Opening a session checks your identity and device, prepares a recipient-specific copy, and records the access before releasing the document. The server determines whether access is allowed.</p>
+              </details>
 
               {/* Primary Action Button */}
               {!activeSession && isAuthorizedRecipient && (
@@ -431,7 +427,7 @@ export function InboxConsole() {
                   >
                     <Lock size={15} />
                     <span style={{ fontWeight: 600, letterSpacing: '0.04em' }}>
-                      {isProcessingSession ? 'EXECUTING FAIL-CLOSED DECRYPTION PIPELINE...' : 'INITIATE SECURE DECRYPTION SESSION'}
+                      {isProcessingSession ? 'Preparing secure session…' : 'Open document securely'}
                     </span>
                   </button>
                 </div>
@@ -441,7 +437,7 @@ export function InboxConsole() {
               {(isProcessingSession || activeSession) && (
                 <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
                   <div style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                    Fail-Closed Decryption State Machine
+                    Session progress
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
                     {pipelineSteps.map((step, idx) => {
@@ -473,11 +469,11 @@ export function InboxConsole() {
                         >
                           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px' }}>
                             {isSuccess ? (
-                              <CheckCircle size={14} color="#16a34a" />
+                              <CheckCircle size={14} color="var(--status-success)" />
                             ) : isActive ? (
-                              <RefreshCw size={14} className="animate-spin text-blue-500" />
+                              <RefreshCw size={14} className="spin" />
                             ) : isFailed ? (
-                              <XCircle size={14} color="#dc2626" />
+                              <XCircle size={14} color="var(--status-danger)" />
                             ) : (
                               <Clock size={14} className="text-muted" />
                             )}
@@ -503,11 +499,11 @@ export function InboxConsole() {
             {/* Active Session & Controlled Watermarked Viewer */}
             {activeSession && (
               <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                
+
                 {/* Session Header Bar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <ShieldCheck size={20} color="#16a34a" />
+                    <ShieldCheck size={20} color="var(--status-success)" />
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span className="font-bold text-sm text-primary">SECURE EPHEMERAL VIEWER</span>
@@ -524,7 +520,7 @@ export function InboxConsole() {
                     {sessionTimeRemaining !== null && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
                         <Clock size={13} className={sessionTimeRemaining < 120 ? 'text-red-500 animate-pulse' : 'text-muted'} />
-                        <span className="font-mono text-xs font-bold" style={{ color: sessionTimeRemaining < 120 ? '#dc2626' : 'var(--text-primary)' }}>
+                        <span className="font-mono text-xs font-bold" style={{ color: sessionTimeRemaining < 120 ? 'var(--status-danger)' : 'var(--text-primary)' }}>
                           {Math.floor(sessionTimeRemaining / 60)}:{String(sessionTimeRemaining % 60).padStart(2, '0')}
                         </span>
                       </div>
@@ -542,7 +538,7 @@ export function InboxConsole() {
                   <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-xs)', padding: '12px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                       <div className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                        <CheckCircle size={13} color="#16a34a" />
+                        <CheckCircle size={13} color="var(--status-success)" />
                         <span>Hyperledger Fabric Decryption Provenance Transaction Committed</span>
                       </div>
                       <span className="badge badge-white font-mono" style={{ fontSize: '9px' }}>
@@ -573,7 +569,7 @@ export function InboxConsole() {
 
                 {/* DLP & Optical Watermark Warning */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: 'var(--radius-xs)', fontSize: '11px' }}>
-                  <ShieldAlert size={14} color="#ca8a04" />
+                  <ShieldAlert size={14} color="var(--status-warning)" />
                   <span className="text-secondary">
                     Data Loss Prevention Active: Document stream is protected with unique cryptographic forensic attribution. Analog screen capture or photographic reproduction can be optically extracted and tied to your identity.
                   </span>
@@ -675,9 +671,9 @@ export function InboxConsole() {
         ) : (
           <div className="card" style={{ padding: '60px 20px', textAlign: 'center' }}>
             <FileText size={32} className="text-secondary" style={{ margin: '0 auto 12px auto' }} />
-            <h3 className="font-bold text-base">Select an Encrypted Document</h3>
+            <h3 className="font-bold text-base">{loading ? "Loading document…" : documentId ? "Document unavailable" : "Select an encrypted document"}</h3>
             <p className="text-secondary text-xs" style={{ marginTop: '4px' }}>
-              Choose a document from the inbox on the left to initiate a post-quantum fail-closed decryption session.
+              {loading ? "Retrieving the document record." : documentId ? "Return to document details or retry if an error is shown above." : "Choose a document from the inbox to start a secure session."}
             </p>
           </div>
         )}

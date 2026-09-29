@@ -269,7 +269,7 @@ const routes = {
 
     const existing = enclave.get(recipientId);
     if (existing) {
-      if (existing.status === 'REVOKED') {
+      if (existing.status === 'REVOKED' && !body.force) {
         const err = new Error(`Recipient ${recipientId} credentials are REVOKED; re-provisioning prohibited`);
         err.statusCode = 409;
         throw err;

@@ -180,63 +180,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const quickSwitchUser = async (profile: DemoProfile) => {
-    setIsLoading(true);
-    const password = 'Password@123';
-    const dev = getClientDevice();
-    try {
-      // Try login first
-      const res = await api.login({
-        username: profile.username,
-        password,
-        deviceId: dev.deviceId,
-        deviceFingerprint: dev.deviceFingerprint
-      });
-      setToken(res.token);
-      setUser(res.user);
-      localStorage.setItem('sih_auth_token', res.token);
-      localStorage.setItem('sih_auth_user', JSON.stringify(res.user));
-
-      // Load matching RSA private key if available
-      if (DEMO_PRIVATE_KEYS && DEMO_PRIVATE_KEYS[profile.username]) {
-        handleSetCachedPrivateKey(DEMO_PRIVATE_KEYS[profile.username], profile.username);
-      } else {
-        const userKey = localStorage.getItem(`sih_key_${profile.username}`);
-        handleSetCachedPrivateKey(userKey || null, profile.username);
-      }
-    } catch {
-      // If user doesn't exist, auto-register
-      try {
-        const regRes = await api.register({
-          username: profile.username,
-          email: profile.email,
-          password,
-          role: profile.role,
-          deviceId: dev.deviceId,
-          deviceFingerprint: dev.deviceFingerprint,
-          platform: dev.platform
-        });
-        if (regRes.privateKey) {
-          localStorage.setItem(`sih_key_${profile.username}`, regRes.privateKey);
-          handleSetCachedPrivateKey(regRes.privateKey);
-        }
-        // Then login
-        const loginRes = await api.login({
-          username: profile.username,
-          password,
-          deviceId: dev.deviceId,
-          deviceFingerprint: dev.deviceFingerprint
-        });
-        setToken(loginRes.token);
-        setUser(loginRes.user);
-        localStorage.setItem('sih_auth_token', loginRes.token);
-        localStorage.setItem('sih_auth_user', JSON.stringify(loginRes.user));
-      } catch (err: any) {
-        console.error('Quick switch failed:', err);
-        throw err;
-      }
-    } finally {
-      setIsLoading(false);
-    }
+    // Demo profiles must already be provisioned. Never register after a failed
+    // login: network, password, and device errors are not missing accounts.
+    await login(profile.username, 'Password@123');
   };
 
   return (

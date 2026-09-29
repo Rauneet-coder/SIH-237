@@ -22,10 +22,13 @@ export interface RecipientKeyEntry {
 export interface DocumentMeta {
   _id: string;
   id?: string;
+  documentId?: string;
   title: string;
   fileName: string;
   fileSize: number;
   fileHash: string;
+  structuralFingerprint?: string;
+  storagePath?: string;
   mimeType: string;
   classification?: string;
   validFrom?: string;
@@ -33,6 +36,7 @@ export interface DocumentMeta {
   senderId: User;
   recipientKeys: RecipientKeyEntry[];
   recipientCount?: number;
+  keyEnvelopes?: Array<{ recipientId: string }>;
   myEncryptedKey?: string;
   createdAt: string;
 }
@@ -114,10 +118,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}, token?: s
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
+  } catch {
+    throw new Error('Cannot reach the backend. Check that the API is running and its URL and allowed frontend origin are configured correctly.');
+  }
 
   const contentType = response.headers.get('content-type');
   let data;
