@@ -184,8 +184,7 @@ function Workspace({ children }: { children: React.ReactNode }) {
         <details className="demo-accounts">
           <summary>Try a demonstration account</summary>
           <p>
-            Uses the connected demo server. Accounts may be created on first
-            use.
+            Uses existing demo accounts on the connected server. If an account is unavailable, contact the workspace administrator.
           </p>
           {COMMAND_OFFICERS.map((p) => (
             <button

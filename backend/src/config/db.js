@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const env = require('./env');
+const { migrateDeviceIndexes } = require('./deviceIndexes');
 
 /**
  * Connect to MongoDB using Mongoose
@@ -8,6 +9,7 @@ const env = require('./env');
 async function connectDB(uri = env.MONGODB_URI) {
   try {
     const conn = await mongoose.connect(uri);
+    await migrateDeviceIndexes(conn.connection.db.collection('devices'));
     console.log(`[Database] MongoDB Connected: ${conn.connection.host}/${conn.connection.name}`);
     return conn;
   } catch (error) {
